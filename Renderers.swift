@@ -210,3 +210,31 @@ final class YouTubeWallpaperRenderer: NSObject, WallpaperRenderer, WKNavigationD
         showUnavailable(-1)
     }
 }
+
+// MARK: - Local interactive HTML / WebGL
+
+final class InteractiveWebWallpaperRenderer: NSObject, WallpaperRenderer {
+    let view: NSView
+    private let webView: WKWebView
+    private let url: URL
+
+    init(url: URL) {
+        self.url = url
+        let config = WKWebViewConfiguration()
+        config.mediaTypesRequiringUserActionForPlayback = []
+        webView = WKWebView(frame: .zero, configuration: config)
+        view = webView
+        super.init()
+    }
+
+    func start() {
+        if url.isFileURL { webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent()) }
+        else { webView.load(URLRequest(url: url)) }
+    }
+    func play() { webView.evaluateJavaScript("window.liveWallResume && window.liveWallResume()", completionHandler: nil) }
+    func pause() { webView.evaluateJavaScript("window.liveWallPause && window.liveWallPause()", completionHandler: nil) }
+    func setMuted(_ muted: Bool) { }
+    func setVolume(_ volume: Float) { }
+    func setScaling(_ mode: ScalingMode) { }
+    func teardown() { webView.stopLoading(); webView.loadHTMLString("", baseURL: nil); webView.removeFromSuperview() }
+}

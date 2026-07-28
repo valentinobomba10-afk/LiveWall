@@ -6,6 +6,7 @@ enum WallpaperKind {
     case localVideo(URL)
     case directURL(URL)
     case youTube(String)   // canonical video id
+    case web(URL)          // bundled or local interactive HTML/WebGL wallpaper
 }
 
 /// How video content is fitted into the display.

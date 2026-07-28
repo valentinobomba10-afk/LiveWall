@@ -117,7 +117,7 @@ struct PosterView: View {
     private func generateFrame() async {
         guard generated == nil, item.kind == .localVideo, let kind = item.wallpaperKind() else { return }
         let url: URL?
-        switch kind { case .localVideo(let u): url = u; case .directURL, .youTube: url = nil }
+        switch kind { case .localVideo(let u): url = u; case .directURL, .youTube, .web: url = nil }
         if let url { generated = await ThumbnailGenerator.frame(url: url) }
     }
 
@@ -139,11 +139,14 @@ private func heroPlayableURL(_ item: LibraryItem) -> URL? {
         return nil   // never stream a remote 4K clip just to render a preview
     case .youTube:
         return nil            // YouTube can't stream into AVPlayer; poster only
+    case .web:
+        return nil            // interactive wallpapers render in the desktop overlay only
     }
 }
 
 private func categoryLabel(_ item: LibraryItem) -> String {
     let t = item.title.lowercased()
+    if item.kind == .web { return "Interactive" }
     func has(_ words: [String]) -> Bool { words.contains { t.contains($0) } }
     if has(["car", "ferrari", "porsche", "bmw", "toyota", "supra", "nissan", "mercedes", "audi", "lamborghini", "drive", "racing", "f1", "road"]) { return "Cars" }
     if has(["minecraft", "roblox", "game", "elden ring", "deltarune", "ghost of tsushima", "nfs", "star citizen"]) { return "Games" }
@@ -160,12 +163,13 @@ private func categoryLabel(_ item: LibraryItem) -> String {
     case .localVideo: return "My Wallpapers"
     case .youTube: return "Online Video"
     case .directURL: return "Other"
+    case .web: return "Interactive"
     }
 }
 
 private func resolutionLabel(_ item: LibraryItem) -> String {
     if item.remoteThumbnailURL?.absoluteString.contains("motionbgs") == true { return "3840×2160" }
-    switch item.kind { case .youTube: return "YouTube"; case .localVideo: return "Local video"; case .directURL: return "Remote" }
+    switch item.kind { case .youTube: return "YouTube"; case .localVideo: return "Local video"; case .directURL: return "Remote"; case .web: return "Interactive" }
 }
 
 // MARK: - Root browser

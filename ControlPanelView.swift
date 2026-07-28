@@ -69,7 +69,7 @@ final class WallpaperViewModel: ObservableObject {
     init(controller: WallpaperController, displayObserver: DisplayObserver, library: LibraryStore) {
         self.controller = controller
         self.displayObserver = displayObserver
-        self.templates = Self.deduplicated(Self.builtInTemplates + Self.additionalTemplates + Self.additionalTemplates2 + Self.wallpaperWavesTemplates)
+        self.templates = Self.deduplicated(Self.interactiveTemplates + Self.builtInTemplates + Self.additionalTemplates + Self.additionalTemplates2 + Self.wallpaperWavesTemplates)
         self.library = library
         controller.setColorControls(brightness: brightness, saturation: saturation)
         refreshDisplays()
@@ -95,6 +95,7 @@ final class WallpaperViewModel: ObservableObject {
 
     private func category(for item: LibraryItem) -> String {
         let title = item.title.lowercased()
+        if item.kind == .web { return "Interactive" }
         if title.contains("car") || title.contains("bmw") || title.contains("nissan") || title.contains("toyota") || title.contains("porsche") || title.contains("mercedes") || title.contains("subaru") || title.contains("ferrari") || title.contains("dodge") || title.contains("supra") || title.contains("skyline") || title.contains("road") || title.contains("drive") { return "Cars" }
         if title.contains("space") || title.contains("astronaut") || title.contains("galaxy") || title.contains("nebula") || title.contains("black hole") || title.contains("cosmic") || title.contains("saturn") || title.contains("stellar") || title.contains("interstellar") || title.contains("void") || title.contains("universe") { return "Space" }
         if title.contains("coding") || title.contains("code") || title.contains("matrix") || title.contains("hud") || title.contains("technology") || title.contains("digital") || title.contains("circuit") || title.contains("bitcoin") || title.contains("program") || title.contains("razer") { return "Technology" }
@@ -269,6 +270,11 @@ final class WallpaperViewModel: ObservableObject {
         UserDefaults.standard.set(saturation, forKey: "wallpaperSaturation"); controller.setColorControls(brightness: brightness, saturation: saturation)
     }
     private struct Backup: Codable { var items: [LibraryItem]; var offlineMode: Bool; var brightness: Double; var saturation: Double; var rotationEnabled: Bool; var rotationMinutes: Double }
+
+    private static var interactiveTemplates: [LibraryItem] {
+        guard let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") else { return [] }
+        return [LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString)]
+    }
 
     private static let builtInTemplates: [LibraryItem] = [
         LibraryItem(title: "MotionBGS · Sunset of the Seven Suns - Deltarune", kind: .directURL, urlString: "https://motionbgs.com/dl/4k/9893"),
@@ -1276,6 +1282,7 @@ struct WallpaperTile: View {
         case .localVideo(let u): url = u
         case .directURL(let u):  url = u
         case .youTube:           url = nil
+        case .web:               url = nil
         }
         if let url { nsThumb = await ThumbnailGenerator.frame(url: url) }
     }

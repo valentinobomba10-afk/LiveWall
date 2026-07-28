@@ -105,6 +105,7 @@ final class WallpaperController {
             case .localVideo(let u): type = "local";   value = u.path
             case .directURL(let u):  type = "direct";  value = u.absoluteString
             case .youTube(let vid):  type = "youtube"; value = vid
+            case .web(let url):      type = "web";     value = url.absoluteString
             }
             return Persisted(type: type, value: value, displayID: id,
                              muted: r.muted, volume: r.volume, loops: r.loops, scaling: r.scaling.rawValue)
@@ -126,6 +127,9 @@ final class WallpaperController {
                 kind = .directURL(url)
             case "youtube":
                 kind = .youTube(p.value)
+            case "web":
+                guard let url = URL(string: p.value) else { continue }
+                kind = .web(url)
             default:
                 continue
             }
@@ -210,6 +214,8 @@ final class WallpaperController {
                                           loops: request.loops, scaling: request.scaling)
         case .youTube(let id):
             return YouTubeWallpaperRenderer(videoID: id, muted: request.muted)
+        case .web(let url):
+            return InteractiveWebWallpaperRenderer(url: url)
         }
     }
 }
