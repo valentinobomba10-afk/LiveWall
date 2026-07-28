@@ -1,0 +1,19 @@
+name: LiveWall
+options:
+  bundleIdPrefix: com.livewall
+  deploymentTarget:
+    macOS: "13.0"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.livewall.app
+    SWIFT_VERSION: 5.10
+    MACOSX_DEPLOYMENT_TARGET: 13.0
+targets:
+  LiveWall:
+    type: application
+    platform: macOS
+    sources: [LiveWall]
+    settings:
+      base:
+        INFOPLIST_KEY_LSUIElement: false
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
