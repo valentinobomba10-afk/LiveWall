@@ -813,7 +813,7 @@ struct SettingsSheet: View {
             section("Power & startup") {
                 Toggle("Pause on battery", isOn: udBinding("pauseOnBattery", false))
                 Toggle("Pause in Low Power Mode", isOn: udBinding("pauseOnLowPowerMode", false))
-                Toggle("Pause when hidden by a fullscreen app", isOn: udBinding("pauseOnFullscreen", true))
+                Toggle("Pause when hidden by a fullscreen app", isOn: udBinding("pauseOnFullscreen", false))
                 Toggle("Restore wallpaper on launch", isOn: udBinding("restoreLastWallpaper", true))
                 Text("Screen lock and display sleep always pause playback.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)

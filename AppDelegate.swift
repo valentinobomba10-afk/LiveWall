@@ -16,6 +16,16 @@ import ServiceManagement
     private var restoreEnabled: Bool { UserDefaults.standard.object(forKey: "restoreLastWallpaper") as? Bool ?? true }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // LiveWall is designed to stay active by default. People can opt into
+        // battery/fullscreen pauses from Settings when they want to save power.
+        UserDefaults.standard.register(defaults: [
+            "keepRunningInBackground": true,
+            "restoreLastWallpaper": true,
+            "pauseOnBattery": false,
+            "pauseOnLowPowerMode": false,
+            "pauseOnFullscreen": false,
+            "pauseWhenHidden": false
+        ])
         // Keep the wallpaper service alive across sign-ins. The control window
         // can still be closed; the explicit Quit command is required to stop it.
         try? LaunchAtLoginService.setEnabled(true)
@@ -27,7 +37,7 @@ import ServiceManagement
         fullscreenTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.fullscreen.refresh()
-            let enabled = UserDefaults.standard.object(forKey: "pauseOnFullscreen") as? Bool ?? true
+            let enabled = UserDefaults.standard.object(forKey: "pauseOnFullscreen") as? Bool ?? false
             self.controller.setExternalPaused(enabled && self.fullscreen.anotherAppIsFullscreen)
         }
         setUpStatusItem()
