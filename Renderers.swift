@@ -11,6 +11,7 @@ protocol WallpaperRenderer: AnyObject {
     func setMuted(_ muted: Bool)
     func setVolume(_ volume: Float)
     func setScaling(_ mode: ScalingMode)
+    func setPointer(_ point: CGPoint?)
     func teardown()
 }
 
@@ -90,6 +91,7 @@ final class VideoWallpaperRenderer: WallpaperRenderer {
     func setMuted(_ m: Bool) { muted = m; queuePlayer.isMuted = m }
     func setVolume(_ v: Float) { volume = v; queuePlayer.volume = v }
     func setScaling(_ mode: ScalingMode) { layerView.playerLayer.videoGravity = mode.gravity }
+    func setPointer(_ point: CGPoint?) { }
 
     func teardown() {
         queuePlayer.pause()
@@ -154,6 +156,7 @@ final class YouTubeWallpaperRenderer: NSObject, WallpaperRenderer, WKNavigationD
         sendCommand("setVolume", args: "[\(Int(v * 100))]")
     }
     func setScaling(_ mode: ScalingMode) { /* YouTube manages its own layout */ }
+    func setPointer(_ point: CGPoint?) { }
 
     func teardown() {
         webView.stopLoading()
@@ -236,5 +239,11 @@ final class InteractiveWebWallpaperRenderer: NSObject, WallpaperRenderer {
     func setMuted(_ muted: Bool) { }
     func setVolume(_ volume: Float) { }
     func setScaling(_ mode: ScalingMode) { }
+    func setPointer(_ point: CGPoint?) {
+        let script: String
+        if let point { script = "window.liveWallPointer && window.liveWallPointer(\(point.x), \(point.y))" }
+        else { script = "window.liveWallPointer && window.liveWallPointer(-2, -2)" }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
     func teardown() { webView.stopLoading(); webView.loadHTMLString("", baseURL: nil); webView.removeFromSuperview() }
 }

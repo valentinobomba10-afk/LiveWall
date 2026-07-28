@@ -27,13 +27,17 @@ final class WallpaperController {
     private var externalPaused = false                           // fullscreen/game policy
     private var visualBrightness = 1.0
     private var visualSaturation = 1.0
+    private var pointerTimer: Timer?
 
     private let displays: DisplayObserver
 
     init(displays: DisplayObserver) {
         self.displays = displays
         displays.addHandler { [weak self] in self?.reconcile() }
+        pointerTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.sendPointerPosition() }
     }
+
+    deinit { pointerTimer?.invalidate() }
 
     /// Apply `request` to its target displays, leaving other displays' wallpapers running.
     /// (Set one display at a time to give each screen a different wallpaper.)
@@ -148,6 +152,20 @@ final class WallpaperController {
     }
     private func applyPlaybackState() {
         for (id, r) in renderers { shouldPlay(id) ? r.play() : r.pause() }
+    }
+
+    /// Tracks the cursor without receiving mouse clicks, so interactive wallpapers
+    /// respond while the normal desktop remains completely usable.
+    private func sendPointerPosition() {
+        guard !windows.isEmpty else { return }
+        let mouse = NSEvent.mouseLocation
+        for (id, window) in windows {
+            let frame = window.frame
+            guard frame.contains(mouse) else { renderers[id]?.setPointer(nil); continue }
+            let point = CGPoint(x: (mouse.x - frame.minX) / frame.width * 2 - 1,
+                                y: (mouse.y - frame.minY) / frame.height * 2 - 1)
+            renderers[id]?.setPointer(point)
+        }
     }
     private func setCovered(_ id: CGDirectDisplayID, _ isCovered: Bool) {
         if isCovered { covered.insert(id) } else { covered.remove(id) }
