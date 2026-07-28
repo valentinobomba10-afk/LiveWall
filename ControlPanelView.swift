@@ -166,6 +166,9 @@ final class WallpaperViewModel: ObservableObject {
         apply(item)
         selectedDisplayIDs = previous
     }
+    func activateFluxIdle() {
+        apply(LibraryItem(title: "Flux · Drift Idle", kind: .web, urlString: "https://flux.sandydoo.me/"))
+    }
     func setBrightness(_ value: Double) { brightness = value; UserDefaults.standard.set(value, forKey: "wallpaperBrightness"); controller.setColorControls(brightness: value, saturation: saturation) }
     func setSaturation(_ value: Double) { saturation = value; UserDefaults.standard.set(value, forKey: "wallpaperSaturation"); controller.setColorControls(brightness: brightness, saturation: value) }
 
@@ -272,11 +275,7 @@ final class WallpaperViewModel: ObservableObject {
     private struct Backup: Codable { var items: [LibraryItem]; var offlineMode: Bool; var brightness: Double; var saturation: Double; var rotationEnabled: Bool; var rotationMinutes: Double }
 
     private static var interactiveTemplates: [LibraryItem] {
-        var items = [
-            // Official Flux build by Sander Melnikov (MIT). It is intentionally
-            // loaded from its author-maintained site, rather than reimplemented.
-            LibraryItem(title: "Flux · Drift Idle", kind: .web, urlString: "https://flux.sandydoo.me/")
-        ]
+        var items: [LibraryItem] = []
         if let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") {
             items.append(LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString))
         }
