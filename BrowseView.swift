@@ -387,7 +387,7 @@ struct BrowseView: View {
                 gamePicker(title: "Drive Mad", subtitle: "Obstacle car course", icon: "car.2.fill", resource: "DriveMad", number: 1)
                 gamePicker(title: "Snow Rider", subtitle: "Downhill sled run", icon: "snowflake", resource: "SnowRider", number: 2)
                 gamePicker(title: "Cluster Rush", subtitle: "Leap between moving trucks", icon: "figure.run", resource: "ClusterRush", number: 3)
-                gamePicker(title: "All Games", subtitle: "Search 2,900+ games", icon: "magnifyingglass", resource: "UGSAllGames", number: 4)
+                gamePicker(title: "UGS Collection", subtitle: "Search the full game collection", icon: "square.grid.3x3.fill", resource: "UGSCollection", number: 4)
                 Spacer()
             }
 
