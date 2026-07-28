@@ -272,8 +272,15 @@ final class WallpaperViewModel: ObservableObject {
     private struct Backup: Codable { var items: [LibraryItem]; var offlineMode: Bool; var brightness: Double; var saturation: Double; var rotationEnabled: Bool; var rotationMinutes: Double }
 
     private static var interactiveTemplates: [LibraryItem] {
-        guard let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") else { return [] }
-        return [LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString)]
+        var items = [
+            // Official Flux build by Sander Melnikov (MIT). It is intentionally
+            // loaded from its author-maintained site, rather than reimplemented.
+            LibraryItem(title: "Flux · Drift Idle", kind: .web, urlString: "https://flux.sandydoo.me/")
+        ]
+        if let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") {
+            items.append(LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString))
+        }
+        return items
     }
 
     private static let builtInTemplates: [LibraryItem] = [
