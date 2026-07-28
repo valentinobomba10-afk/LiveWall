@@ -1,5 +1,5 @@
 .DS_Store
 .build/
 LiveWall.app/
-LiveWall-Universal.zip
+LiveWall-*.zip
 WindowsApp/

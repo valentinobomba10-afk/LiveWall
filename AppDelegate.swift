@@ -33,6 +33,7 @@ import ServiceManagement
         setUpStatusItem()
         controller.onChange = { [weak self] in self?.persistState() }
         if restoreEnabled { restoreState() }
+        if UserDefaults.standard.bool(forKey: "updateNotificationsEnabled") { viewModel.checkForUpdates(silent: true) }
         UserDefaults.standard.set(true, forKey: "startupPromptShown")
     }
 

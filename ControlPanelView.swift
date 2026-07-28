@@ -153,6 +153,7 @@ final class WallpaperViewModel: ObservableObject {
             kind: kind, muted: muted, volume: Float(volume), loops: loops,
             scaling: scaling, displayIDs: selectedDisplayIDs)
         controller.setWallpaper(request)
+        Task { @MainActor in await StaticWallpaperService.applyStill(from: item, to: selectedDisplayIDs) }
         isRunning = true; isPaused = false; runningItemID = item.id; selectedID = item.id
         let n = max(selectedDisplayIDs.count, 1)
         setStatus("“\(item.title)” is live on \(n) display\(n == 1 ? "" : "s"). Close this window to keep it playing.", error: false)
@@ -224,7 +225,7 @@ final class WallpaperViewModel: ObservableObject {
         downloadedTemplates.removeAll()
         setStatus("Downloaded wallpapers moved to Trash.", error: false)
     }
-    func checkForUpdates() {
+    func checkForUpdates(silent: Bool = false) {
         Task { @MainActor in
             let installed = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
             do {
@@ -240,12 +241,14 @@ final class WallpaperViewModel: ObservableObject {
                         NSWorkspace.shared.open(download)
                     }
                 } else {
+                    guard !silent else { return }
                     alert.messageText = "LiveWall is up to date"
                     alert.informativeText = "You’re running version \(installed)."
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
                 }
             } catch {
+                guard !silent else { return }
                 let alert = NSAlert(error: error)
                 alert.runModal()
             }

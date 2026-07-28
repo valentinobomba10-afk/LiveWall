@@ -164,7 +164,7 @@ struct BrowseView: View {
     @ObservedObject var vm: WallpaperViewModel
     @ObservedObject var library: LibraryStore
 
-    enum Tab: String, CaseIterable { case home = "Home", library = "Library", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
+    enum Tab: String, CaseIterable { case home = "Home", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
     enum SortMode: String, CaseIterable { case mostLiked = "Most Liked", random = "Random", newest = "Newest" }
     @State private var tab: Tab = .home
     @State private var heroItem: LibraryItem?
@@ -179,6 +179,7 @@ struct BrowseView: View {
 
     private var featured: [LibraryItem] { vm.templates }
     private var rotationPool: [LibraryItem] { library.items.isEmpty ? vm.templates : library.items }
+    private var favoriteItems: [LibraryItem] { (vm.templates + library.items).filter { favorites.contains($0.id.uuidString) } }
 
     var body: some View {
         ZStack {
@@ -187,6 +188,7 @@ struct BrowseView: View {
             switch tab {
             case .home:    homeScreen
             case .library: gridScreen(items: sortedItems(filtered(vm.templates)), showCategories: true, showAdd: false)
+            case .favorites: gridScreen(items: favoriteItems, showCategories: false, showAdd: false)
             case .mine:    gridScreen(items: filtered(library.items), showCategories: false, showAdd: true)
             case .playlists: playlistsScreen
             case .settings: ScrollView { SettingsSheet(vm: vm, showsDone: false).frame(maxWidth: 620).padding(.top, 72) }
@@ -824,6 +826,10 @@ struct SettingsSheet: View {
             section("App updates") {
                 Text("LiveWall checks the shared GitHub release channel when you ask it to.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
+                Toggle("Notify me when LiveWall starts", isOn: Binding(
+                    get: { UserDefaults.standard.object(forKey: "updateNotificationsEnabled") as? Bool ?? false },
+                    set: { UserDefaults.standard.set($0, forKey: "updateNotificationsEnabled") }
+                ))
                 Button("Check for Updates…") { vm.checkForUpdates() }.buttonStyle(.borderedProminent)
             }
 
