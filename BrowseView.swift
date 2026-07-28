@@ -386,6 +386,7 @@ struct BrowseView: View {
             HStack(spacing: 12) {
                 gamePicker(title: "Drive Mad", subtitle: "Obstacle car course", icon: "car.2.fill", resource: "DriveMad", number: 1)
                 gamePicker(title: "Snow Rider", subtitle: "Downhill sled run", icon: "snowflake", resource: "SnowRider", number: 2)
+                gamePicker(title: "Cluster Rush", subtitle: "Leap between moving trucks", icon: "figure.run", resource: "ClusterRush", number: 3)
                 Spacer()
             }
 
