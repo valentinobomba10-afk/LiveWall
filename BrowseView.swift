@@ -144,13 +144,23 @@ private func heroPlayableURL(_ item: LibraryItem) -> URL? {
 
 private func categoryLabel(_ item: LibraryItem) -> String {
     let t = item.title.lowercased()
-    if t.contains("cat") || t.contains("animal") || t.contains("wolf") || t.contains("bird") { return "Animal" }
-    if t.contains("samurai") || t.contains("knight") || t.contains("dragon") || t.contains("fantasy") { return "Fantasy" }
-    if t.contains("space") || t.contains("astronaut") || t.contains("galaxy") || t.contains("nebula") { return "Space" }
-    if t.contains("car") || t.contains("ferrari") || t.contains("f1") { return "Cars" }
-    if t.contains("anime") || t.contains("waifu") || t.contains("chainsaw") { return "Anime" }
-    if t.contains("magma") || t.contains("abstract") || t.contains("vortex") { return "Abstract" }
-    switch item.kind { case .youTube: return "YouTube"; case .localVideo: return "Local"; case .directURL: return "Discover" }
+    func has(_ words: [String]) -> Bool { words.contains { t.contains($0) } }
+    if has(["car", "ferrari", "porsche", "bmw", "toyota", "supra", "nissan", "mercedes", "audi", "lamborghini", "drive", "racing", "f1", "road"]) { return "Cars" }
+    if has(["minecraft", "roblox", "game", "elden ring", "deltarune", "ghost of tsushima", "nfs", "star citizen"]) { return "Games" }
+    if has(["spider", "iron man", "marvel", "batman", "superman", "hero", "avenger"]) { return "Superheroes" }
+    if has(["space", "astronaut", "galaxy", "nebula", "moon", "cosmic", "planet", "universe", "saturn", "stellar"]) { return "Space" }
+    if has(["forest", "mountain", "ocean", "lake", "rain", "snow", "flower", "meadow", "field", "tree", "sunset", "sunrise", "waterfall", "beach", "nature", "garden", "sky"]) { return "Nature" }
+    if has(["cat", "animal", "wolf", "bird", "dog", "tiger", "lion", "fish", "wildlife"]) { return "Animals" }
+    if has(["samurai", "knight", "dragon", "fantasy", "magic", "sword", "castle", "dune"]) { return "Fantasy" }
+    if has(["anime", "waifu", "chainsaw", "demon slayer", "manga"]) { return "Anime" }
+    if has(["magma", "abstract", "vortex", "neon", "rgb", "particle", "fluid"]) { return "Abstract" }
+    if has(["city", "building", "street", "train", "tokyo", "night", "urban", "cafe"]) { return "Cities" }
+    if has(["razer", "coding", "code", "matrix", "digital", "circuit", "technology", "computer"]) { return "Technology" }
+    switch item.kind {
+    case .localVideo: return "My Wallpapers"
+    case .youTube: return "Online Video"
+    case .directURL: return "Other"
+    }
 }
 
 private func resolutionLabel(_ item: LibraryItem) -> String {
