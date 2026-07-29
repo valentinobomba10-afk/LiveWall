@@ -35,7 +35,7 @@ Animated video wallpapers for macOS — play local videos, direct video URLs, an
 
 ## Supported macOS versions
 - **Minimum:** macOS 13 Ventura
-- **Recommended:** macOS 14 Sonoma or later
+- **Recommended:** macOS 14 Sonoma or later, including macOS Tahoe 26.5.2
 
 (macOS 13+ is required for the modern login-item and menu-bar APIs LiveWall uses.)
 
