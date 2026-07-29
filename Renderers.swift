@@ -225,6 +225,10 @@ final class InteractiveWebWallpaperRenderer: NSObject, WallpaperRenderer {
         self.url = url
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
+        // Flux's controls contain its web-site navigation, creator links, and
+        // purchase prompt. A live wallpaper should render only the artwork.
+        let css = "var s=document.createElement('style');s.textContent='#controls{display:none!important}';document.documentElement.appendChild(s);"
+        config.userContentController.addUserScript(WKUserScript(source: css, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: config)
         view = webView
         super.init()

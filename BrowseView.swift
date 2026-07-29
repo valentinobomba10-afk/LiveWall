@@ -69,17 +69,6 @@ struct BundledGameView: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) { }
 }
 
-struct RemoteWebPreview: NSViewRepresentable {
-    let url: URL
-    func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.mediaTypesRequiringUserActionForPlayback = []
-        let view = WKWebView(frame: .zero, configuration: configuration)
-        view.load(URLRequest(url: url))
-        return view
-    }
-    func updateNSView(_ nsView: WKWebView, context: Context) { }
-}
 
 // MARK: - Poster image for a library item
 
@@ -190,7 +179,7 @@ struct BrowseView: View {
     @ObservedObject var vm: WallpaperViewModel
     @ObservedObject var library: LibraryStore
 
-    enum Tab: String, CaseIterable { case home = "Home", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", idle = "Idle", settings = "Settings", games = "Games" }
+    enum Tab: String, CaseIterable { case home = "Home", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
     enum SortMode: String, CaseIterable { case mostLiked = "Most Liked", random = "Random", newest = "Newest" }
     @State private var tab: Tab = .home
     @State private var heroItem: LibraryItem?
@@ -217,7 +206,6 @@ struct BrowseView: View {
             case .favorites: gridScreen(items: favoriteItems, showCategories: false, showAdd: false)
             case .mine:    gridScreen(items: filtered(library.items), showCategories: false, showAdd: true)
             case .playlists: playlistsScreen
-            case .idle: idleScreen
             case .settings: ScrollView { SettingsSheet(vm: vm, showsDone: false).frame(maxWidth: 620).padding(.top, 72) }
             case .games: gamesScreen
             }
@@ -413,30 +401,6 @@ struct BrowseView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.12)))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .padding(28)
-        .padding(.top, 70)
-    }
-
-    private var idleScreen: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Idle").font(.system(size: 34, weight: .bold, design: .serif)).foregroundStyle(.white)
-                    Text("A calm motion background for when your Mac is idle.").font(.system(size: 13)).foregroundStyle(.white.opacity(0.65))
-                }
-                Spacer()
-                Button("Activate Idle") { vm.activateFluxIdle() }
-                    .buttonStyle(.borderedProminent)
-            }
-
-            RemoteWebPreview(url: URL(string: "https://flux.sandydoo.me/")!)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.white.opacity(0.12)))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Text("Flux by Sander Melnikov · MIT License")
-                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
         }
         .padding(28)
         .padding(.top, 70)

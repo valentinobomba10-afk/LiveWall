@@ -275,7 +275,9 @@ final class WallpaperViewModel: ObservableObject {
     private struct Backup: Codable { var items: [LibraryItem]; var offlineMode: Bool; var brightness: Double; var saturation: Double; var rotationEnabled: Bool; var rotationMinutes: Double }
 
     private static var interactiveTemplates: [LibraryItem] {
-        var items: [LibraryItem] = []
+        var items = [
+            LibraryItem(title: "Flux · Drift", kind: .web, urlString: "https://flux.sandydoo.me/")
+        ]
         if let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") {
             items.append(LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString))
         }
