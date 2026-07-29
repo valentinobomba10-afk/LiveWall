@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body,canvas{margin:0;width:100%;height:100%;overflow:hidden;background:#030516}canvas{display:block}</style></head><body><canvas id="c"></canvas><script>
+const c=document.querySelector('#c'),x=c.getContext('2d');let live=true,m=[.5,.5],dots=[];
+window.liveWallPause=()=>live=false;window.liveWallResume=()=>{live=true;loop()};window.liveWallPointer=(a,b)=>m=[(a+1)/2,1-(b+1)/2];
+function size(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;x.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}addEventListener('resize',size);size();
+for(let i=0;i<155;i++)dots.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,vx:(Math.random()-.5)*.45,vy:(Math.random()-.5)*.45,r:1+Math.random()*3,h:150+Math.random()*160});
+function loop(){if(!live)return;x.fillStyle='rgba(3,5,22,.18)';x.fillRect(0,0,innerWidth,innerHeight);let mx=m[0]*innerWidth,my=m[1]*innerHeight;
+dots.forEach(p=>{let dx=mx-p.x,dy=my-p.y,d=Math.hypot(dx,dy)+1;if(d<260){p.vx+=dx/d*.018;p.vy+=dy/d*.018}p.x+=p.vx;p.y+=p.vy;p.vx*=.992;p.vy*=.992;if(p.x<0||p.x>innerWidth)p.vx*=-1;if(p.y<0||p.y>innerHeight)p.vy*=-1;x.beginPath();x.fillStyle=`hsla(${p.h},90%,70%,.72)`;x.shadowBlur=18;x.shadowColor=x.fillStyle;x.arc(p.x,p.y,p.r,0,7);x.fill()});x.shadowBlur=0;requestAnimationFrame(loop)}loop();
+</script></body></html>

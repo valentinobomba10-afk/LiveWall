@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body,canvas{margin:0;width:100%;height:100%;overflow:hidden;background:#08010f}canvas{display:block}</style></head><body><canvas id="c"></canvas><script>
+const c=document.querySelector('#c'),x=c.getContext('2d');let live=true,m=[.5,.5],last=[0,0],waves=[];
+window.liveWallPause=()=>live=false;window.liveWallResume=()=>{live=true;loop()};window.liveWallPointer=(a,b)=>m=[(a+1)/2,1-(b+1)/2];
+function size(){c.width=innerWidth*devicePixelRatio;c.height=innerHeight*devicePixelRatio;x.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0)}addEventListener('resize',size);size();
+function loop(){if(!live)return;x.fillStyle='rgba(8,1,15,.16)';x.fillRect(0,0,innerWidth,innerHeight);let p=[m[0]*innerWidth,m[1]*innerHeight];if(Math.hypot(p[0]-last[0],p[1]-last[1])>16){waves.push({x:p[0],y:p[1],r:4,a:1,h:Math.random()*90+260});last=p}waves.forEach(w=>{w.r+=2.4;w.a*=.974;x.beginPath();x.strokeStyle=`hsla(${w.h},100%,66%,${w.a})`;x.lineWidth=2;x.shadowBlur=16;x.shadowColor=x.strokeStyle;x.arc(w.x,w.y,w.r,0,7);x.stroke()});waves=waves.filter(w=>w.a>.025);x.shadowBlur=0;requestAnimationFrame(loop)}loop();
+</script></body></html>

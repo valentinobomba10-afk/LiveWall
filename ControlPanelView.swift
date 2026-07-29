@@ -281,6 +281,15 @@ final class WallpaperViewModel: ObservableObject {
         if let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") {
             items.append(LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString))
         }
+        for (name, title) in [
+            ("AuroraParticles", "Aurora Particles"),
+            ("NeonRipples", "Neon Ripples"),
+            ("WarpStars", "Warp Stars")
+        ] {
+            if let url = Bundle.main.url(forResource: name, withExtension: "html", subdirectory: "Interactive") {
+                items.append(LibraryItem(title: title, kind: .web, urlString: url.absoluteString))
+            }
+        }
         return items
     }
 
