@@ -263,6 +263,16 @@ struct BrowseView: View {
             if tab == .library { categoryChips }
             Spacer()
         }
+        // Keep scrolling content from visually bleeding through the fixed controls.
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.05), Color(red: 0.04, green: 0.04, blue: 0.05).opacity(0.96), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: tab == .library ? 150 : 122),
+            alignment: .top
+        )
     }
 
     private var myCategories: [String] { ["All"] + Set(vm.templates.map { categoryLabel($0) }).sorted() }
@@ -517,7 +527,7 @@ struct BrowseView: View {
         // Reserve space so Discover never scrolls underneath them.
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
-        .padding(.top, 118)
+        .padding(.top, 150)
         .foregroundStyle(.white)
         .background(Color(red: 0.04, green: 0.04, blue: 0.05))
     }
