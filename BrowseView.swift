@@ -85,7 +85,12 @@ struct PosterView: View {
 
     var body: some View {
         Group {
-            if let generated {
+            if item.kind == .localImage,
+                      let kind = item.wallpaperKind(),
+                      case let .localImage(url) = kind,
+                      let image = NSImage(contentsOf: url) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else if let generated {
                 Image(nsImage: generated).resizable().aspectRatio(contentMode: contentMode)
             } else if !posterURLs.isEmpty {
                 AsyncImage(url: posterURLs[min(posterIndex, posterURLs.count - 1)]) { phase in
@@ -118,7 +123,7 @@ struct PosterView: View {
     private func generateFrame() async {
         guard generated == nil, item.kind == .localVideo, let kind = item.wallpaperKind() else { return }
         let url: URL?
-        switch kind { case .localVideo(let u): url = u; case .directURL, .youTube, .web: url = nil }
+        switch kind { case .localVideo(let u): url = u; case .localImage, .directURL, .youTube, .web: url = nil }
         if let url { generated = await ThumbnailGenerator.frame(url: url) }
     }
 
@@ -135,6 +140,8 @@ private func heroPlayableURL(_ item: LibraryItem) -> URL? {
     switch item.kind {
     case .localVideo:
         if case let .localVideo(u)? = item.wallpaperKind() { return u }
+        return nil
+    case .localImage:
         return nil
     case .directURL:
         return nil   // never stream a remote 4K clip just to render a preview
@@ -162,6 +169,7 @@ private func categoryLabel(_ item: LibraryItem) -> String {
     if has(["razer", "coding", "code", "matrix", "digital", "circuit", "technology", "computer"]) { return "Technology" }
     switch item.kind {
     case .localVideo: return "My Wallpapers"
+    case .localImage: return "My Wallpapers"
     case .youTube: return "Online Video"
     case .directURL: return "Other"
     case .web: return "Interactive"
@@ -170,7 +178,7 @@ private func categoryLabel(_ item: LibraryItem) -> String {
 
 private func resolutionLabel(_ item: LibraryItem) -> String {
     if item.remoteThumbnailURL?.absoluteString.contains("motionbgs") == true { return "3840×2160" }
-    switch item.kind { case .youTube: return "YouTube"; case .localVideo: return "Local video"; case .directURL: return "Remote"; case .web: return "Interactive" }
+    switch item.kind { case .youTube: return "YouTube"; case .localVideo: return "Local video"; case .localImage: return "Picture"; case .directURL: return "Remote"; case .web: return "Interactive" }
 }
 
 // MARK: - Root browser

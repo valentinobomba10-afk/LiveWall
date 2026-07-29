@@ -147,6 +147,14 @@ final class WallpaperViewModel: ObservableObject {
             }
             return
         }
+        if item.kind == .localImage {
+            Task { @MainActor in await StaticWallpaperService.applyStill(from: item, to: selectedDisplayIDs) }
+            controller.stop()
+            isRunning = false; isPaused = false; runningItemID = nil; selectedID = item.id
+            let n = max(selectedDisplayIDs.count, 1)
+            setStatus("“\(item.title)” is set as the background on \(n) display\(n == 1 ? "" : "s").", error: false)
+            return
+        }
         guard let kind = item.wallpaperKind() else {
             setStatus("Couldn’t open “\(item.title)”. The file may have moved.", error: true); return
         }
@@ -771,6 +779,30 @@ final class WallpaperViewModel: ObservableObject {
         setStatus("Added “\(item.title)”. Double-click it to go live.", error: false)
     }
 
+    func addImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Add Picture"
+        guard panel.runModal() == .OK, let source = panel.url else { return }
+
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("LiveWall/PictureWallpapers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let ext = source.pathExtension.isEmpty ? "jpg" : source.pathExtension
+        let saved = folder.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        do {
+            try FileManager.default.copyItem(at: source, to: saved)
+            let item = LibraryItem(title: source.deletingPathExtension().lastPathComponent, kind: .localImage,
+                                   urlString: saved.absoluteString, thumbnailURLString: saved.absoluteString)
+            library.add(item); section = .myWallpapers; selectedID = item.id; showAdd = false
+            setStatus("Added “\(item.title)”. Select it to set it as your background.", error: false)
+        } catch {
+            setStatus("Couldn’t add that picture.", error: true)
+            showInputError("LiveWall couldn’t save that image. Try another JPG, PNG, HEIC, or WebP picture.")
+        }
+    }
+
     func addFromURLField() {
         let text = addURLText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let url = URL(string: text),
@@ -1296,10 +1328,11 @@ struct WallpaperTile: View {
         // Never open remote 4K files just to make a grid thumbnail. Doing that
         // for 150 templates makes the Gallery feel slow and starts many large
         // network reads at once. Local files can be thumbnailed immediately.
-        guard item.kind == .localVideo, nsThumb == nil, let kind = item.wallpaperKind() else { return }
+        guard (item.kind == .localVideo || item.kind == .localImage), nsThumb == nil, let kind = item.wallpaperKind() else { return }
         let url: URL?
         switch kind {
         case .localVideo(let u): url = u
+        case .localImage(let u): nsThumb = NSImage(contentsOf: u); return
         case .directURL(let u):  url = u
         case .youTube:           url = nil
         case .web:               url = nil
@@ -1384,6 +1417,11 @@ struct AddSheet: View {
                 }
                 .buttonStyle(PrimaryGlassButtonStyle())
 
+                Button(action: vm.addImage) {
+                    Label("Choose Picture Background…", systemImage: "photo.on.rectangle")
+                }
+                .buttonStyle(GlassButtonStyle(tint: .purple))
+
                 HStack { rule; Text("or").foregroundStyle(.secondary).font(.system(size: 12, design: .rounded)); rule }
 
                 Text("Paste a direct video link").font(.system(size: 13, weight: .medium, design: .rounded))
@@ -1404,7 +1442,7 @@ struct AddSheet: View {
                 .buttonStyle(GlassButtonStyle(tint: .blue))
                 .keyboardShortcut(.defaultAction)
 
-                Text("YouTube links are not supported. Choose a local MP4/MOV or paste a direct video file URL.")
+                Text("Choose a JPG, PNG, HEIC, or WebP picture for a static background. YouTube links are not supported.")
                     .font(.system(size: 11.5, design: .rounded)).foregroundStyle(.secondary)
 
                 HStack { Spacer(); Button("Done") { vm.showAdd = false }.keyboardShortcut(.cancelAction) }

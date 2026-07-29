@@ -5,7 +5,12 @@ import Foundation
 /// visible whenever LiveWall is paused or not running.
 @MainActor enum StaticWallpaperService {
     static func applyStill(from item: LibraryItem, to displayIDs: Set<CGDirectDisplayID>) async {
-        guard case let .localVideo(source)? = item.wallpaperKind(), let image = await ThumbnailGenerator.frame(url: source) else { return }
+        guard let kind = item.wallpaperKind() else { return }
+        if case let .localImage(source) = kind {
+            setDesktopImage(source, displayIDs: displayIDs)
+            return
+        }
+        guard case let .localVideo(source) = kind, let image = await ThumbnailGenerator.frame(url: source) else { return }
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("LiveWall/StillWallpapers", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -14,9 +19,14 @@ import Foundation
               let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.92]) else { return }
         do {
             try jpeg.write(to: output, options: .atomic)
-            for screen in NSScreen.screens where displayIDs.contains(DisplayObserver.displayID(for: screen)) {
-                try NSWorkspace.shared.setDesktopImageURL(output, for: screen, options: [:])
-            }
+            setDesktopImage(output, displayIDs: displayIDs)
         } catch { NSLog("[LiveWall] Could not set static wallpaper: \(error.localizedDescription)") }
+    }
+
+    private static func setDesktopImage(_ url: URL, displayIDs: Set<CGDirectDisplayID>) {
+        for screen in NSScreen.screens where displayIDs.contains(DisplayObserver.displayID(for: screen)) {
+            do { try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:]) }
+            catch { NSLog("[LiveWall] Could not set picture background: \(error.localizedDescription)") }
+        }
     }
 }

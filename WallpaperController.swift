@@ -107,6 +107,7 @@ final class WallpaperController {
             let type: String, value: String
             switch r.kind {
             case .localVideo(let u): type = "local";   value = u.path
+            case .localImage(let u): type = "image";   value = u.path
             case .directURL(let u):  type = "direct";  value = u.absoluteString
             case .youTube(let vid):  type = "youtube"; value = vid
             case .web(let url):      type = "web";     value = url.absoluteString
@@ -129,6 +130,10 @@ final class WallpaperController {
             case "direct":
                 guard let url = URL(string: p.value) else { continue }
                 kind = .directURL(url)
+            case "image":
+                let url = URL(fileURLWithPath: p.value)
+                guard FileManager.default.fileExists(atPath: url.path) else { continue }
+                kind = .localImage(url)
             case "youtube":
                 kind = .youTube(p.value)
             case "web":
@@ -230,6 +235,8 @@ final class WallpaperController {
         case .localVideo(let url), .directURL(let url):
             return VideoWallpaperRenderer(url: url, muted: request.muted, volume: request.volume,
                                           loops: request.loops, scaling: request.scaling)
+        case .localImage(let url):
+            return ImageWallpaperRenderer(url: url, scaling: request.scaling)
         case .youTube(let id):
             return YouTubeWallpaperRenderer(videoID: id, muted: request.muted)
         case .web(let url):

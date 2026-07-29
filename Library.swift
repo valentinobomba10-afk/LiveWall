@@ -3,11 +3,12 @@ import AVFoundation
 
 /// A saved wallpaper (template or user-added).
 enum ItemKind: String, Codable {
-    case localVideo, directURL, youTube, web
+    case localVideo, localImage, directURL, youTube, web
 
     var badgeIcon: String {
         switch self {
         case .localVideo: return "film.fill"
+        case .localImage: return "photo.fill"
         case .directURL:  return "link"
         case .youTube:    return "play.rectangle.fill"
         case .web:        return "sparkles.rectangle.stack.fill"
@@ -60,6 +61,7 @@ struct LibraryItem: Identifiable, Codable, Hashable {
     var subtitle: String {
         switch kind {
         case .localVideo: return "Local video"
+        case .localImage: return "Picture background"
         case .directURL:  return URL(string: urlString ?? "")?.host ?? "Remote video"
         case .youTube:    return "YouTube"
         case .web:        return "Interactive"
@@ -79,6 +81,17 @@ struct LibraryItem: Identifiable, Codable, Hashable {
                 }
             }
             if let s = urlString, let url = URL(string: s), url.isFileURL { return .localVideo(url) }
+            return nil
+        case .localImage:
+            if let bookmark {
+                var stale = false
+                if let url = try? URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope],
+                                      relativeTo: nil, bookmarkDataIsStale: &stale) {
+                    _ = url.startAccessingSecurityScopedResource()
+                    return .localImage(url)
+                }
+            }
+            if let s = urlString, let url = URL(string: s), url.isFileURL { return .localImage(url) }
             return nil
         case .directURL:
             guard let s = urlString, let url = URL(string: s) else { return nil }

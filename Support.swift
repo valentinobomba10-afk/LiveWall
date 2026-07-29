@@ -4,6 +4,7 @@ import AVFoundation
 /// What kind of content a wallpaper is.
 enum WallpaperKind {
     case localVideo(URL)
+    case localImage(URL)
     case directURL(URL)
     case youTube(String)   // canonical video id
     case web(URL)          // bundled or local interactive HTML/WebGL wallpaper

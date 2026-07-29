@@ -103,6 +103,36 @@ final class VideoWallpaperRenderer: WallpaperRenderer {
     }
 }
 
+// MARK: - Static image
+
+/// Used only if a restored request contains an image. Normal image uploads are
+/// applied through NSWorkspace so they remain visible even after LiveWall quits.
+final class ImageWallpaperRenderer: WallpaperRenderer {
+    let view: NSView
+    private let imageView: NSImageView
+
+    init(url: URL, scaling: ScalingMode) {
+        imageView = NSImageView(frame: .zero)
+        imageView.image = NSImage(contentsOf: url)
+        imageView.imageAlignment = .alignCenter
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.autoresizingMask = [.width, .height]
+        view = imageView
+        setScaling(scaling)
+    }
+
+    func start() { }
+    func play() { }
+    func pause() { }
+    func setMuted(_ muted: Bool) { }
+    func setVolume(_ volume: Float) { }
+    func setScaling(_ mode: ScalingMode) {
+        imageView.imageScaling = mode == .stretch ? .scaleAxesIndependently : .scaleProportionallyUpOrDown
+    }
+    func setPointer(_ point: CGPoint?) { }
+    func teardown() { imageView.removeFromSuperview() }
+}
+
 // MARK: - YouTube (official IFrame Player API only — no downloading / ad-block / DRM bypass)
 
 final class YouTubeWallpaperRenderer: NSObject, WallpaperRenderer, WKNavigationDelegate, WKScriptMessageHandler {
