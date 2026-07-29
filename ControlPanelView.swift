@@ -275,19 +275,22 @@ final class WallpaperViewModel: ObservableObject {
     private struct Backup: Codable { var items: [LibraryItem]; var offlineMode: Bool; var brightness: Double; var saturation: Double; var rotationEnabled: Bool; var rotationMinutes: Double }
 
     private static var interactiveTemplates: [LibraryItem] {
+        let fluidPreview = Bundle.main.url(forResource: "FluidPreview", withExtension: "png", subdirectory: "Interactive/Previews")?.absoluteString
+        let fluxPreview = Bundle.main.url(forResource: "FluxPreview", withExtension: "webp", subdirectory: "Interactive/Previews")?.absoluteString
         var items = [
-            LibraryItem(title: "Flux · Drift", kind: .web, urlString: "https://flux.sandydoo.me/")
+            LibraryItem(title: "Flux · Drift", kind: .web, urlString: "https://flux.sandydoo.me/", thumbnailURLString: fluxPreview)
         ]
         if let url = Bundle.main.url(forResource: "FluidSimulation", withExtension: "html", subdirectory: "Interactive") {
-            items.append(LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString))
+            items.append(LibraryItem(title: "WebGL Fluid Simulation", kind: .web, urlString: url.absoluteString, thumbnailURLString: fluidPreview))
         }
-        for (name, title) in [
-            ("AuroraParticles", "Aurora Particles"),
-            ("NeonRipples", "Neon Ripples"),
-            ("WarpStars", "Warp Stars")
+        for (name, title, previewName) in [
+            ("AuroraParticles", "Aurora Particles", "AuroraPreview"),
+            ("NeonRipples", "Neon Ripples", "NeonPreview"),
+            ("WarpStars", "Warp Stars", "WarpPreview")
         ] {
             if let url = Bundle.main.url(forResource: name, withExtension: "html", subdirectory: "Interactive") {
-                items.append(LibraryItem(title: title, kind: .web, urlString: url.absoluteString))
+                let preview = Bundle.main.url(forResource: previewName, withExtension: "png", subdirectory: "Interactive/Previews")?.absoluteString ?? fluidPreview
+                items.append(LibraryItem(title: title, kind: .web, urlString: url.absoluteString, thumbnailURLString: preview))
             }
         }
         return items
