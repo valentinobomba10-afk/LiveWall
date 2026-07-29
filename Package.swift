@@ -9,12 +9,14 @@ let package = Package(
         .executableTarget(
             name: "LiveWall",
             path: ".",
-            exclude: ["WindowsApp", "docs", "LiveWall.app", "README.md", "SPEC.md", "project.yml"],
+            exclude: ["docs", "LiveWall.app", "README.md", "SPEC.md", "project.yml"],
             sources: [
                 "LiveWallApp.swift",
                 "AppDelegate.swift",
                 "ControlPanelView.swift",
                 "BrowseView.swift",
+                "CommunityService.swift",
+                "SignUpView.swift",
                 "Library.swift",
                 "Support.swift",
                 "DesktopWindow.swift",
@@ -24,7 +26,11 @@ let package = Package(
                 "DownloadService.swift",
                 "PowerMonitor.swift",
                 "StatusMenu.swift",
-                "Rotation.swift"
+                "Rotation.swift",
+                "Services/LaunchAtLoginService.swift",
+                "Services/FullscreenDetectionService.swift",
+                "StaticWallpaperService.swift",
+                "UpdateService.swift"
             ]
         )
     ]

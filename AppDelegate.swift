@@ -42,8 +42,12 @@ import ServiceManagement
         }
         setUpStatusItem()
         controller.onChange = { [weak self] in self?.persistState() }
-        if restoreEnabled { restoreState() }
-        if UserDefaults.standard.bool(forKey: "updateNotificationsEnabled") { viewModel.checkForUpdates(silent: true) }
+        // Do not restore or start a wallpaper until this Mac has completed the
+        // required LiveWall sign-up screen.
+        if UserDefaults.standard.bool(forKey: "liveWallSignedUp") {
+            if restoreEnabled { restoreState() }
+            if UserDefaults.standard.bool(forKey: "updateNotificationsEnabled") { viewModel.checkForUpdates(silent: true) }
+        }
         UserDefaults.standard.set(true, forKey: "startupPromptShown")
     }
 
@@ -53,7 +57,7 @@ import ServiceManagement
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let root = BrowseView(vm: viewModel, library: library)
+        let root = LiveWallRootView(vm: viewModel, library: library)
         let hosting = NSHostingView(rootView: root)
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 740),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
