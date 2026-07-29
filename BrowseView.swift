@@ -513,7 +513,11 @@ struct BrowseView: View {
                 }
             }
         }
-        .padding(24)
+        // The floating navigation and macOS traffic lights sit above this section.
+        // Reserve space so Discover never scrolls underneath them.
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+        .padding(.top, 118)
         .foregroundStyle(.white)
         .background(Color(red: 0.04, green: 0.04, blue: 0.05))
     }
