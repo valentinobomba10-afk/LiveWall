@@ -187,7 +187,7 @@ struct BrowseView: View {
     @ObservedObject var vm: WallpaperViewModel
     @ObservedObject var library: LibraryStore
 
-    enum Tab: String, CaseIterable { case home = "Home", community = "Community", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
+    enum Tab: String, CaseIterable { case home = "Home", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
     enum SortMode: String, CaseIterable { case mostLiked = "Most Liked", random = "Random", newest = "Newest" }
     @State private var tab: Tab = .home
     @State private var heroItem: LibraryItem?
@@ -199,11 +199,6 @@ struct BrowseView: View {
     @State private var settingsTapCount = 0
     @State private var gamesUnlocked = false
     @State private var selectedGameResource = "DriveMad"
-    @StateObject private var community = CommunityService()
-    @AppStorage("communityAPIURL") private var communityAPIURL = ""
-    @State private var communityIdentity = ""
-    @State private var communityEmail = ""
-    @State private var communityPassword = ""
 
     private var featured: [LibraryItem] { vm.templates }
     private var rotationPool: [LibraryItem] { library.items.isEmpty ? vm.templates : library.items }
@@ -215,7 +210,6 @@ struct BrowseView: View {
 
             switch tab {
             case .home:    homeScreen
-            case .community: communityScreen
             case .library: gridScreen(items: sortedItems(filtered(vm.templates)), showCategories: true, showAdd: false)
             case .favorites: gridScreen(items: favoriteItems, showCategories: false, showAdd: false)
             case .mine:    gridScreen(items: filtered(library.items), showCategories: false, showAdd: true)
@@ -292,84 +286,6 @@ struct BrowseView: View {
     private var myCategories: [String] { ["All"] + Set(vm.templates.map { categoryLabel($0) }).sorted() }
 
     // MARK: Playlists
-
-    private var communityScreen: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Community").font(.system(size: 38, weight: .semibold, design: .serif)).foregroundStyle(.white)
-                        Text("Share your own live wallpapers with other LiveWall users.").font(.system(size: 14)).foregroundStyle(.white.opacity(0.65))
-                    }
-                    Spacer()
-                    Button { Task { await community.load(from: communityAPIURL) } } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }.buttonStyle(GlassButtonStyle(tint: .blue))
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Community server").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
-                    TextField("https://your-domain.com/livewall-api/api.php", text: $communityAPIURL)
-                        .textFieldStyle(.roundedBorder)
-                    Text("Your Hostinger server address. Uploads are reviewed before they appear for everyone.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                .padding(16).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                if community.username.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Create an account or sign in").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                        HStack(spacing: 10) {
-                            TextField("Username or email", text: $communityIdentity).textFieldStyle(.roundedBorder)
-                            TextField("Email (for new account)", text: $communityEmail).textFieldStyle(.roundedBorder)
-                            SecureField("Password", text: $communityPassword).textFieldStyle(.roundedBorder)
-                        }
-                        HStack {
-                            Button("Sign In") { Task { await community.login(endpoint: communityAPIURL, identity: communityIdentity, password: communityPassword) } }
-                            Button("Create Account") { Task { await community.register(endpoint: communityAPIURL, username: communityIdentity, email: communityEmail, password: communityPassword) } }
-                            Spacer()
-                        }.buttonStyle(GlassButtonStyle(tint: .purple))
-                    }
-                    .padding(16).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    HStack {
-                        Label("Signed in as \(community.username)", systemImage: "person.crop.circle.fill").foregroundStyle(.white)
-                        Spacer()
-                        Button { community.chooseAndUpload(endpoint: communityAPIURL) } label: {
-                            Label(community.isUploading ? "Uploading…" : "Upload a Video", systemImage: "arrow.up.circle.fill")
-                        }.buttonStyle(PrimaryGlassButtonStyle()).disabled(community.isUploading)
-                    }
-                    .padding(16).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-
-                Text(community.message).font(.system(size: 12)).foregroundStyle(community.isError ? .red : .secondary)
-
-                if community.isLoading {
-                    ProgressView("Loading community wallpapers…").tint(.white).frame(maxWidth: .infinity, minHeight: 220)
-                } else if community.wallpapers.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "person.3.sequence").font(.system(size: 34)).foregroundStyle(.white.opacity(0.35))
-                        Text("No community wallpapers yet").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                        Text("Once approved uploads arrive, they will show here.").font(.system(size: 13)).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 240)
-                } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 300, maximum: 460), spacing: 18)], spacing: 22) {
-                        ForEach(community.wallpapers) { post in
-                            let item = post.asLibraryItem()
-                            WallpaperCard(item: item, favorite: favorites.contains(item.id.uuidString), running: vm.runningItemID == item.id)
-                                .onTapGesture { vm.apply(item) }
-                                .overlay(alignment: .bottomLeading) {
-                                    Text("by \(post.author) · \(post.category)").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(10)
-                                }
-                        }
-                    }
-                }
-            }
-            .padding(24).padding(.top, 92)
-        }
-        .task { await community.load(from: communityAPIURL) }
-    }
 
     private var intervalLabel: String {
         switch Int(rotation.interval) {
