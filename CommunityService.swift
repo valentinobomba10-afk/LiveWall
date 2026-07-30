@@ -28,7 +28,6 @@ struct CommunityNotification: Codable, Identifiable {
 }
 
 @MainActor final class CommunityService: ObservableObject {
-    static let defaultEndpoint = "https://palevioletred-barracuda-314738.hostingersite.com/livewall-api/api.php"
     @Published private(set) var wallpapers: [CommunityWallpaper] = []
     @Published private(set) var isLoading = false
     @Published private(set) var isUploading = false

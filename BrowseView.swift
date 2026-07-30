@@ -200,7 +200,7 @@ struct BrowseView: View {
     @State private var gamesUnlocked = false
     @State private var selectedGameResource = "DriveMad"
     @StateObject private var community = CommunityService()
-    @AppStorage("communityAPIURL") private var communityAPIURL = CommunityService.defaultEndpoint
+    @AppStorage("communityAPIURL") private var communityAPIURL = ""
     @State private var communityIdentity = ""
     @State private var communityEmail = ""
     @State private var communityPassword = ""
@@ -312,9 +312,18 @@ struct BrowseView: View {
                     }.buttonStyle(GlassButtonStyle(tint: .blue))
                 }
 
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Community server").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                    TextField("https://your-domain.com/livewall-api/api.php", text: $communityAPIURL)
+                        .textFieldStyle(.roundedBorder)
+                    Text("Your Hostinger server address. Uploads are reviewed before they appear for everyone.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .padding(16).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
                 if community.username.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Join the Community").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                        Text("Create an account or sign in").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                         HStack(spacing: 10) {
                             TextField("Username or email", text: $communityIdentity).textFieldStyle(.roundedBorder)
                             TextField("Email (for new account)", text: $communityEmail).textFieldStyle(.roundedBorder)
