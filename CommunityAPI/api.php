@@ -53,6 +53,9 @@ function optionalUserID(): ?int {
 function publicURL(string $filename): string { return rtrim(API_BASE_URL, '/') . '/media/videos/' . rawurlencode($filename); }
 
 $action = $_GET['action'] ?? '';
+if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    reply(['version' => LATEST_VERSION, 'downloadURL' => UPDATE_DOWNLOAD_URL, 'releaseURL' => UPDATE_RELEASE_URL]);
+}
 try {
     if ($action === 'register' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = input(); $username = string($data, 'username', 32); $email = string($data, 'email', 254); $password = (string)($data['password'] ?? '');

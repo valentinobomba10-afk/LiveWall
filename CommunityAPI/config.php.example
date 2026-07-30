@@ -11,3 +11,9 @@ const MAX_VIDEO_BYTES = 524288000; // 500 MB
 
 // Choose a long random value for the private moderation page.
 const ADMIN_TOKEN = 'replace-with-a-long-random-admin-token';
+
+// Update check values. Use the private GitHub release URL if only invited
+// collaborators should be able to download the ZIP.
+const LATEST_VERSION = '0.3.2';
+const UPDATE_DOWNLOAD_URL = 'https://github.com/valentinobomba10-afk/LiveWall/releases/latest';
+const UPDATE_RELEASE_URL = 'https://github.com/valentinobomba10-afk/LiveWall/releases/latest';

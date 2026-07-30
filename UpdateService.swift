@@ -1,26 +1,21 @@
 import Foundation
 import AppKit
 
-/// GitHub Releases is the shared update channel for every LiveWall install.
-/// A release only needs a `vX.Y.Z` tag and a `LiveWall.zip` asset.
+/// A small public Hostinger endpoint only exposes the current version. The app
+/// archive itself can remain in the private GitHub repository, so the updater
+/// works without embedding a GitHub credential in every copy of LiveWall.
 enum GitHubUpdateService {
-    private static let repository = "valentinobomba10-afk/LiveWall"
+    private static let updateFeed = "https://palevioletred-barracuda-314738.hostingersite.com/livewall-api/api.php?action=update"
 
     struct Release: Decodable {
-        let tagName: String
-        let htmlURL: URL
-        let assets: [Asset]
-        enum CodingKeys: String, CodingKey { case tagName = "tag_name", htmlURL = "html_url", assets }
-    }
-
-    struct Asset: Decodable {
-        let name: String
-        let browserDownloadURL: URL
-        enum CodingKeys: String, CodingKey { case name, browserDownloadURL = "browser_download_url" }
+        let version: String
+        let downloadURL: URL
+        let releaseURL: URL
+        var tagName: String { "v\(version)" }
     }
 
     static func latestRelease() async throws -> Release {
-        let url = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
+        let url = URL(string: updateFeed)!
         var request = URLRequest(url: url)
         request.setValue("LiveWall", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -40,6 +35,6 @@ enum GitHubUpdateService {
     }
 
     enum UpdateError: LocalizedError { case noRelease
-        var errorDescription: String? { "No LiveWall release is available yet." }
+        var errorDescription: String? { "The LiveWall update service is not available yet. Ask the app owner to finish the Hostinger update setup." }
     }
 }

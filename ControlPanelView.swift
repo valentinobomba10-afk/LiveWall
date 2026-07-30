@@ -249,8 +249,7 @@ final class WallpaperViewModel: ObservableObject {
                     alert.addButton(withTitle: "Download Update")
                     alert.addButton(withTitle: "Later")
                     if alert.runModal() == .alertFirstButtonReturn {
-                        let download = release.assets.first(where: { $0.name.lowercased().hasSuffix(".zip") })?.browserDownloadURL ?? release.htmlURL
-                        NSWorkspace.shared.open(download)
+                    NSWorkspace.shared.open(release.downloadURL)
                     }
                 } else {
                     guard !silent else { return }
