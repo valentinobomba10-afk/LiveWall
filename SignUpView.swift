@@ -5,18 +5,16 @@ import SwiftUI
 struct LiveWallRootView: View {
     @ObservedObject var vm: WallpaperViewModel
     @ObservedObject var library: LibraryStore
-    @ObservedObject var pets: DesktopPetManager
     @AppStorage("liveWallSignedUp") private var signedUp = false
 
     var body: some View {
         if signedUp {
-            BrowseView(vm: vm, library: library, pets: pets)
+            BrowseView(vm: vm, library: library)
         } else {
             SignUpView { name, email in
                 UserDefaults.standard.set(name, forKey: "liveWallProfileName")
                 UserDefaults.standard.set(email, forKey: "liveWallProfileEmail")
                 signedUp = true
-                pets.start()
             }
         }
     }

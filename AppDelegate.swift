@@ -8,7 +8,6 @@ import ServiceManagement
     private lazy var controller = WallpaperController(displays: displays)
     private lazy var library = LibraryStore()
     private lazy var viewModel = WallpaperViewModel(controller: controller, displayObserver: displays, library: library)
-    private lazy var pets = DesktopPetManager(displays: displays)
     private let power = PowerMonitor()
     private var statusItem: NSStatusItem?
     private var fullscreenTimer: Timer?
@@ -46,7 +45,6 @@ import ServiceManagement
         // Do not restore or start a wallpaper until this Mac has completed the
         // required LiveWall sign-up screen.
         if UserDefaults.standard.bool(forKey: "liveWallSignedUp") {
-            pets.start()
             if restoreEnabled { restoreState() }
             if UserDefaults.standard.bool(forKey: "updateNotificationsEnabled") { viewModel.checkForUpdates(silent: true) }
         }
@@ -59,7 +57,7 @@ import ServiceManagement
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let root = LiveWallRootView(vm: viewModel, library: library, pets: pets)
+        let root = LiveWallRootView(vm: viewModel, library: library)
         let hosting = NSHostingView(rootView: root)
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 740),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -91,7 +89,6 @@ import ServiceManagement
     func applicationWillTerminate(_ notification: Notification) {
         fullscreenTimer?.invalidate()
         controller.stop()
-        pets.stop()
     }
 
     private func setUpMenu() {
