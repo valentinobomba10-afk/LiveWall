@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// Blocks the wallpaper browser until the person using this Mac creates a
-/// LiveWall profile. Passwords are never stored locally; Community accounts
-/// are created separately through the configured Community server.
+/// LiveWall profile. Passwords are never stored locally.
 struct LiveWallRootView: View {
     @ObservedObject var vm: WallpaperViewModel
     @ObservedObject var library: LibraryStore
@@ -36,7 +35,7 @@ struct SignUpView: View {
             VStack(spacing: 18) {
                 Image(systemName: "sparkles.tv.fill").font(.system(size: 48)).foregroundStyle(LinearGradient(colors: [.blue, .purple, .pink], startPoint: .topLeading, endPoint: .bottomTrailing))
                 Text("Welcome to LiveWall").font(.system(size: 30, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                Text("Create your LiveWall profile to start using wallpapers and the Community.")
+                Text("Create your LiveWall profile to start using wallpapers.")
                     .font(.system(size: 14)).foregroundStyle(.white.opacity(0.65)).multilineTextAlignment(.center).frame(maxWidth: 390)
 
                 VStack(spacing: 10) {
@@ -48,7 +47,7 @@ struct SignUpView: View {
 
                 if !error.isEmpty { Text(error).font(.system(size: 12)).foregroundStyle(.red).frame(width: 330, alignment: .leading) }
                 Button("Create LiveWall Account", action: create).buttonStyle(PrimaryGlassButtonStyle()).keyboardShortcut(.defaultAction)
-                Text("Your profile details remain on this Mac. Community sign-in is enabled when your LiveWall Community server is configured.")
+                Text("Your profile details remain on this Mac.")
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.45)).multilineTextAlignment(.center).frame(maxWidth: 390)
             }
             .padding(36).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))

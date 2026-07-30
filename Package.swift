@@ -15,7 +15,6 @@ let package = Package(
                 "AppDelegate.swift",
                 "ControlPanelView.swift",
                 "BrowseView.swift",
-                "CommunityService.swift",
                 "SignUpView.swift",
                 "Library.swift",
                 "Support.swift",
