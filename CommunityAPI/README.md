@@ -10,10 +10,6 @@ This is the Hostinger server side of Community. Videos are kept as files in `med
 4. Copy `config.php.example` to `config.php`, enter the newly-created database details, and change `API_BASE_URL` to your real HTTPS address.
 5. In LiveWall’s Community tab, enter that exact `api.php` address and register a test account.
 
-## Updates
-
-The in-app **Check for Updates** button uses `api.php?action=update`, so it works even though the GitHub repository is private. In `config.php`, set `LATEST_VERSION` and `UPDATE_DOWNLOAD_URL` whenever you publish a release. Keep the download URL private (for example, the private GitHub release URL shared only with collaborators).
-
 New uploads are `pending` so strangers cannot publish content without approval. To publish one, in phpMyAdmin run:
 
 ```sql
