@@ -16,6 +16,7 @@ let package = Package(
                 "ControlPanelView.swift",
                 "BrowseView.swift",
                 "SignUpView.swift",
+                "DesktopPet.swift",
                 "Library.swift",
                 "Support.swift",
                 "DesktopWindow.swift",

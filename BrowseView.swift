@@ -186,8 +186,9 @@ private func resolutionLabel(_ item: LibraryItem) -> String {
 struct BrowseView: View {
     @ObservedObject var vm: WallpaperViewModel
     @ObservedObject var library: LibraryStore
+    @ObservedObject var pets: DesktopPetManager
 
-    enum Tab: String, CaseIterable { case home = "Home", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
+    enum Tab: String, CaseIterable { case home = "Home", pets = "Pets", library = "Library", favorites = "Favorites", mine = "My Wallpapers", playlists = "Playlists", settings = "Settings", games = "Games" }
     enum SortMode: String, CaseIterable { case mostLiked = "Most Liked", random = "Random", newest = "Newest" }
     @State private var tab: Tab = .home
     @State private var heroItem: LibraryItem?
@@ -210,6 +211,7 @@ struct BrowseView: View {
 
             switch tab {
             case .home:    homeScreen
+            case .pets:    PetsSettingsView(pets: pets)
             case .library: gridScreen(items: sortedItems(filtered(vm.templates)), showCategories: true, showAdd: false)
             case .favorites: gridScreen(items: favoriteItems, showCategories: false, showAdd: false)
             case .mine:    gridScreen(items: filtered(library.items), showCategories: false, showAdd: true)
@@ -234,6 +236,7 @@ struct BrowseView: View {
             rotation.interval = max(minutes, 1) * 60
             if vm.rotationEnabled { rotation.start(pool: rotationPool) }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .liveWallOpenPets)) { _ in tab = .pets }
         .sheet(isPresented: $vm.showAdd) { AddSheet(vm: vm) }
         .overlay { if vm.isDownloading { downloadOverlay } }
     }
