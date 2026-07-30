@@ -8,36 +8,21 @@ struct CommunityWallpaper: Codable, Identifiable {
     let category: String
     let videoURL: String
     let author: String
-    let creatorID: Int
-    let downloads: Int
-    let applies: Int
 
     func asLibraryItem() -> LibraryItem {
         LibraryItem(title: title, kind: .directURL, urlString: videoURL)
     }
 }
 
-struct CommunityNotification: Codable, Identifiable {
-    let id: Int
-    let type: String
-    let title: String
-    let body: String
-    let readAt: String?
-
-    enum CodingKeys: String, CodingKey { case id, type, title, body; case readAt = "read_at" }
-}
-
 @MainActor final class CommunityService: ObservableObject {
     @Published private(set) var wallpapers: [CommunityWallpaper] = []
     @Published private(set) var isLoading = false
     @Published private(set) var isUploading = false
-    @Published private(set) var notifications: [CommunityNotification] = []
     @Published var message = "Enter your Community server address to explore shared wallpapers."
     @Published var isError = false
     @Published private(set) var username = UserDefaults.standard.string(forKey: "communityUsername") ?? ""
 
     private var token: String { UserDefaults.standard.string(forKey: "communityToken") ?? "" }
-    var unreadNotificationCount: Int { notifications.filter { $0.readAt == nil }.count }
 
     func load(from endpoint: String) async {
         guard let url = apiURL(endpoint, action: "wallpapers") else { status("Enter a valid Community server address.", error: true); return }
@@ -46,7 +31,6 @@ struct CommunityNotification: Codable, Identifiable {
             let (data, response) = try await URLSession.shared.data(from: url)
             try validate(response)
             wallpapers = try JSONDecoder().decode(WallpaperList.self, from: data).wallpapers
-            if !token.isEmpty { await loadNotifications(from: endpoint) }
             status(wallpapers.isEmpty ? "No community wallpapers have been approved yet." : "Loaded \(wallpapers.count) community wallpapers.", error: false)
         } catch { status(error.localizedDescription, error: true) }
     }
@@ -93,38 +77,6 @@ struct CommunityNotification: Codable, Identifiable {
         } catch { status(error.localizedDescription, error: true) }
     }
 
-    func report(wallpaperID: Int, endpoint: String) async {
-        await post(endpoint: endpoint, action: "report", body: ["wallpaperID": wallpaperID, "reason": "Inappropriate content"], success: "Thanks. Your report was sent to the moderation queue.")
-    }
-
-    func follow(creatorID: Int, endpoint: String) async {
-        await post(endpoint: endpoint, action: "follow", body: ["creatorID": creatorID], success: "Creator followed. You will be notified about approved uploads.")
-    }
-
-    func track(wallpaperID: Int, event: String, endpoint: String) async {
-        guard let url = apiURL(endpoint, action: "track") else { return }
-        do {
-            var request = URLRequest(url: url); request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["wallpaperID": wallpaperID, "event": event])
-            let (_, response) = try await URLSession.shared.data(for: request); try validate(response)
-        } catch { }
-    }
-
-    func loadNotifications(from endpoint: String) async {
-        guard !token.isEmpty, let url = apiURL(endpoint, action: "notifications") else { return }
-        do {
-            var request = URLRequest(url: url); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, response) = try await URLSession.shared.data(for: request); try validate(response)
-            notifications = try JSONDecoder().decode(NotificationList.self, from: data).notifications
-        } catch { }
-    }
-
-    func markNotificationsRead(endpoint: String) async {
-        await post(endpoint: endpoint, action: "read_notifications", body: [:], success: "Notifications marked read.")
-        await loadNotifications(from: endpoint)
-    }
-
     private func authenticate(endpoint: String, action: String, body: [String: String]) async {
         guard let url = apiURL(endpoint, action: action) else { status("Enter a valid Community server address.", error: true); return }
         do {
@@ -136,17 +88,6 @@ struct CommunityNotification: Codable, Identifiable {
             UserDefaults.standard.set(account.token, forKey: "communityToken")
             UserDefaults.standard.set(account.username, forKey: "communityUsername")
             username = account.username; status("Signed in as \(account.username).", error: false)
-        } catch { status(error.localizedDescription, error: true) }
-    }
-
-    private func post(endpoint: String, action: String, body: [String: Any], success: String) async {
-        guard !token.isEmpty else { status("Create an account or sign in first.", error: true); return }
-        guard let url = apiURL(endpoint, action: action) else { status("Enter a valid Community server address.", error: true); return }
-        do {
-            var request = URLRequest(url: url); request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            let (data, response) = try await URLSession.shared.data(for: request); try validate(response)
-            status((try? JSONDecoder().decode(APIMessage.self, from: data).message) ?? success, error: false)
         } catch { status(error.localizedDescription, error: true) }
     }
 
@@ -164,7 +105,6 @@ struct CommunityNotification: Codable, Identifiable {
     private func mimeType(for url: URL) -> String { ["mp4": "video/mp4", "mov": "video/quicktime", "webm": "video/webm"][url.pathExtension.lowercased()] ?? "application/octet-stream" }
 
     private struct WallpaperList: Codable { let wallpapers: [CommunityWallpaper] }
-    private struct NotificationList: Codable { let notifications: [CommunityNotification] }
     private struct Account: Codable { let token: String; let username: String }
     private struct APIMessage: Codable { let message: String? }
 }
