@@ -302,6 +302,11 @@ struct BrowseView: View {
                         Text("Share your own live wallpapers with other LiveWall users.").font(.system(size: 14)).foregroundStyle(.white.opacity(0.65))
                     }
                     Spacer()
+                    if !community.username.isEmpty {
+                        Button { Task { await community.markNotificationsRead(endpoint: communityAPIURL) } } label: {
+                            Label(community.unreadNotificationCount == 0 ? "Notifications" : "\(community.unreadNotificationCount) Notifications", systemImage: "bell.badge.fill")
+                        }.buttonStyle(GlassButtonStyle(tint: .purple))
+                    }
                     Button { Task { await community.load(from: communityAPIURL) } } label: {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }.buttonStyle(GlassButtonStyle(tint: .blue))
@@ -358,9 +363,13 @@ struct BrowseView: View {
                         ForEach(community.wallpapers) { post in
                             let item = post.asLibraryItem()
                             WallpaperCard(item: item, favorite: favorites.contains(item.id.uuidString), running: vm.runningItemID == item.id)
-                                .onTapGesture { vm.apply(item) }
+                                .onTapGesture { vm.apply(item); Task { await community.track(wallpaperID: post.id, event: "apply", endpoint: communityAPIURL) } }
+                                .contextMenu {
+                                    Button { Task { await community.follow(creatorID: post.creatorID, endpoint: communityAPIURL) } } label: { Label("Follow \(post.author)", systemImage: "person.badge.plus") }
+                                    Button(role: .destructive) { Task { await community.report(wallpaperID: post.id, endpoint: communityAPIURL) } } label: { Label("Report", systemImage: "flag") }
+                                }
                                 .overlay(alignment: .bottomLeading) {
-                                    Text("by \(post.author) · \(post.category)").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(10)
+                                    Text("by \(post.author) · \(post.category) · \(post.downloads) downloads · \(post.applies) uses").font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8)).padding(10)
                                 }
                         }
                     }

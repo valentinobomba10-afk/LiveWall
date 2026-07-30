@@ -43,6 +43,13 @@ function authenticatedUser(): array {
     if (!$user) reply(['error' => 'Your sign-in expired.'], 401);
     return $user;
 }
+function optionalUserID(): ?int {
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (!preg_match('/^Bearer ([a-f0-9]{64})$/i', $header, $matches)) return null;
+    $stmt = db()->prepare('SELECT user_id FROM access_tokens WHERE token_hash=? AND expires_at > NOW() LIMIT 1');
+    $stmt->execute([hash('sha256', $matches[1])]); $row = $stmt->fetch();
+    return $row ? (int)$row['user_id'] : null;
+}
 function publicURL(string $filename): string { return rtrim(API_BASE_URL, '/') . '/media/videos/' . rawurlencode($filename); }
 
 $action = $_GET['action'] ?? '';
@@ -63,10 +70,35 @@ try {
     }
     if ($action === 'wallpapers' && $_SERVER['REQUEST_METHOD'] === 'GET') {
         $page = max(1, min(10000, (int)($_GET['page'] ?? 1))); $limit = max(1, min(50, (int)($_GET['limit'] ?? 30))); $offset = ($page - 1) * $limit;
-        $stmt = db()->prepare('SELECT w.id, w.title, w.category, w.video_filename, w.byte_size, w.created_at, u.username FROM wallpapers w JOIN users u ON u.id=w.user_id WHERE w.status="approved" ORDER BY w.created_at DESC LIMIT ? OFFSET ?');
+        $stmt = db()->prepare('SELECT w.id, w.title, w.category, w.video_filename, w.byte_size, w.created_at, u.username, w.user_id, (SELECT COUNT(*) FROM wallpaper_events e WHERE e.wallpaper_id=w.id AND e.event_type="download") downloads, (SELECT COUNT(*) FROM wallpaper_events e WHERE e.wallpaper_id=w.id AND e.event_type="apply") applies FROM wallpapers w JOIN users u ON u.id=w.user_id WHERE w.status="approved" ORDER BY w.created_at DESC LIMIT ? OFFSET ?');
         $stmt->bindValue(1, $limit, PDO::PARAM_INT); $stmt->bindValue(2, $offset, PDO::PARAM_INT); $stmt->execute();
-        $items = array_map(fn($w) => ['id'=>(int)$w['id'], 'title'=>$w['title'], 'category'=>$w['category'], 'videoURL'=>publicURL($w['video_filename']), 'author'=>$w['username'], 'byteSize'=>(int)$w['byte_size'], 'createdAt'=>$w['created_at']], $stmt->fetchAll());
+        $items = array_map(fn($w) => ['id'=>(int)$w['id'], 'title'=>$w['title'], 'category'=>$w['category'], 'videoURL'=>publicURL($w['video_filename']), 'author'=>$w['username'], 'creatorID'=>(int)$w['user_id'], 'downloads'=>(int)$w['downloads'], 'applies'=>(int)$w['applies'], 'byteSize'=>(int)$w['byte_size'], 'createdAt'=>$w['created_at']], $stmt->fetchAll());
         reply(['wallpapers' => $items]);
+    }
+    if ($action === 'follow' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $user = authenticatedUser(); $data = input(); $creatorID = (int)($data['creatorID'] ?? 0);
+        if ($creatorID < 1 || $creatorID === (int)$user['id']) reply(['error' => 'Choose another creator to follow.'], 422);
+        db()->prepare('INSERT IGNORE INTO follows (follower_id, creator_id) VALUES (?, ?)')->execute([$user['id'], $creatorID]);
+        reply(['message' => 'Creator followed. You will be notified when an upload is approved.']);
+    }
+    if ($action === 'report' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $user = authenticatedUser(); $data = input(); $wallpaperID = (int)($data['wallpaperID'] ?? 0); $reason = string($data, 'reason', 80); $details = string($data, 'details', 500);
+        if ($wallpaperID < 1 || $reason === '') reply(['error' => 'Select a report reason.'], 422);
+        db()->prepare('INSERT IGNORE INTO reports (wallpaper_id, reporter_id, reason, details) VALUES (?, ?, ?, ?)')->execute([$wallpaperID, $user['id'], $reason, $details]);
+        reply(['message' => 'Thanks. Your report was sent to the moderation queue.'], 201);
+    }
+    if ($action === 'track' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $data = input(); $wallpaperID = (int)($data['wallpaperID'] ?? 0); $event = ($data['event'] ?? '') === 'download' ? 'download' : 'apply';
+        if ($wallpaperID > 0) db()->prepare('INSERT INTO wallpaper_events (wallpaper_id, user_id, event_type) VALUES (?, ?, ?)')->execute([$wallpaperID, optionalUserID(), $event]);
+        reply(['message' => 'Recorded.'], 201);
+    }
+    if ($action === 'notifications' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        $user = authenticatedUser(); $stmt = db()->prepare('SELECT id, type, title, body, wallpaper_id, read_at, created_at FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50');
+        $stmt->execute([$user['id']]); reply(['notifications' => $stmt->fetchAll()]);
+    }
+    if ($action === 'read_notifications' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $user = authenticatedUser(); db()->prepare('UPDATE notifications SET read_at=NOW() WHERE user_id=? AND read_at IS NULL')->execute([$user['id']]);
+        reply(['message' => 'Notifications marked read.']);
     }
     if ($action === 'upload' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = authenticatedUser();

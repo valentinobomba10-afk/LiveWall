@@ -16,4 +16,8 @@ New uploads are `pending` so strangers cannot publish content without approval. 
 UPDATE wallpapers SET status='approved', approved_at=NOW() WHERE id=123;
 ```
 
+Or open `admin.php?token=YOUR_ADMIN_TOKEN` after setting `ADMIN_TOKEN` in `config.php`. It has the pending-upload and report moderation queues. It also notifies followers when an approved creator upload goes live.
+
+Creator analytics are recorded whenever someone applies or downloads a community wallpaper. Do not change the schema with partial SQL; re-run the complete `schema.sql` on a fresh database, or add the new tables individually on an existing one.
+
 Do not expose `config.php`, database passwords, or an open database port to the app.
