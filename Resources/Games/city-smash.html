@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <base href="https://cdn.jsdelivr.net/gh/bubbls/youtube-playables@main/city-smash/">
+  <title>City Smash</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #unity-container {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #111;
+    }
+
+    #unity-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #111;
+    }
+
+    #unity-loading-bar {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: min(360px, 70vw);
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    #unity-logo {
+      width: 154px;
+      height: 130px;
+      margin: 0 auto 24px;
+      background: url("TemplateData/unity-logo-dark.png") center / contain no-repeat;
+    }
+
+    #unity-progress-bar-empty {
+      width: 100%;
+      height: 18px;
+      border: 1px solid #777;
+      background: #222;
+      box-sizing: border-box;
+    }
+
+    #unity-progress-bar-full {
+      width: 0%;
+      height: 100%;
+      background: #fff;
+      transition: width 120ms linear;
+    }
+
+    #unity-status {
+      margin-top: 12px;
+      min-height: 18px;
+      color: #ddd;
+      font-size: 13px;
+    }
+
+    #unity-warning {
+      position: absolute;
+      left: 50%;
+      top: 12px;
+      width: min(640px, calc(100% - 24px));
+      transform: translateX(-50%);
+      color: #fff;
+      background: rgba(170, 26, 26, 0.92);
+      border-radius: 4px;
+      box-sizing: border-box;
+      display: none;
+      padding: 10px 12px;
+      font-size: 14px;
+      line-height: 1.35;
+      text-align: center;
+      z-index: 3;
+    }
+  </style>
+  <script>
+    function citySmashDebug(message) {
+      document.documentElement.setAttribute("data-city-smash-debug", message);
+    }
+
+    window.addEventListener("error", function (event) {
+      citySmashDebug("error: " + (event.message || "unknown"));
+    });
+
+    window.addEventListener("unhandledrejection", function (event) {
+      const reason = event.reason && event.reason.message ? event.reason.message : String(event.reason);
+      citySmashDebug("rejection: " + reason);
+    });
+
+    window.ytgame = window.ytgame || {
+      IN_PLAYABLES_ENV: false,
+      SDK_VERSION: "standalone",
+      ads: {},
+      engagement: {
+        sendScore: function () {}
+      },
+      game: {
+        firstFrameReady: function () {},
+        gameReady: function () {},
+        loadData: function () {
+          citySmashDebug("loadData");
+          try {
+            citySmashDebug("loadData.ready");
+            return Promise.resolve(localStorage.getItem("city-smash-save") || "");
+          } catch (error) {
+            citySmashDebug("loadData.error: " + (error.message || String(error)));
+            return Promise.resolve("");
+          }
+        },
+        saveData: function (data) {
+          citySmashDebug("saveData");
+          try {
+            localStorage.setItem("city-smash-save", data || "");
+          } catch (error) {}
+          return Promise.resolve();
+        }
+      },
+      health: {
+        logError: function () {},
+        logWarning: function () {}
+      },
+      system: {
+        getLanguage: function () {
+          return Promise.resolve((navigator.language || "en").split("-")[0]);
+        },
+        isAudioEnabled: function () {
+          return true;
+        },
+        onAudioEnabledChange: function () {
+          return function () {};
+        },
+        onPause: function () {
+          return function () {};
+        },
+        onResume: function () {
+          return function () {};
+        }
+      }
+    };
+    window.loadYTGame = window.loadYTGame || function () {};
+  </script>
+  <script src="lib/jszip.min.js"></script>
+</head>
+<body>
+  <div id="unity-container">
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+    <div id="unity-loading-bar">
+      <div id="unity-logo"></div>
+      <div id="unity-progress-bar-empty">
+        <div id="unity-progress-bar-full"></div>
+      </div>
+      <div id="unity-status">Loading City Smash...</div>
+    </div>
+    <div id="unity-warning"></div>
+  </div>
+
+  <script>
+    var unityMessageQueue = [];
+    var unityGameInstance = {
+      SendMessage: function () {
+        unityMessageQueue.push(Array.prototype.slice.call(arguments));
+      }
+    };
+
+    (function () {
+      "use strict";
+
+      const canvas = document.querySelector("#unity-canvas");
+      const loadingBar = document.querySelector("#unity-loading-bar");
+      const progressBarFull = document.querySelector("#unity-progress-bar-full");
+      const statusText = document.querySelector("#unity-status");
+      const warningBanner = document.querySelector("#unity-warning");
+
+      const buildUrl = "Build";
+      const loaderUrl = buildUrl + "/Build.loader.js";
+      const config = {
+        dataUrl: buildUrl + "/Build.data",
+        frameworkUrl: buildUrl + "/Build.framework.js",
+        codeUrl: buildUrl + "/Build.wasm",
+        streamingAssetsUrl: "https://cdn.jsdelivr.net/gh/bubbls/youtube-playables@main/city-smash/StreamingAssets",
+        companyName: "Paradyme",
+        productName: "City Smash",
+        productVersion: "0.1.0",
+        showBanner: showBanner
+      };
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        canvas.className = "unity-mobile";
+        config.devicePixelRatio = 1;
+      }
+
+      window.addEventListener("beforeunload", function () {
+        if (config.dataUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(config.dataUrl);
+        }
+        if (config.codeUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(config.codeUrl);
+        }
+      });
+
+      startGame().catch(function (error) {
+        console.error(error);
+        showBanner(error && error.message ? error.message : String(error), "error");
+        statusText.textContent = "Could not load City Smash.";
+      });
+
+      async function startGame() {
+        if (!window.JSZip) {
+          throw new Error("JSZip did not load, so the game files cannot be unpacked.");
+        }
+
+        setStatus("Downloading game data...");
+        config.dataUrl = await unzipSingleFile(buildUrl + "/Build.data.zip", "application/octet-stream");
+        progressBarFull.style.width = "35%";
+
+        setStatus("Downloading game code...");
+        config.codeUrl = await unzipSingleFile(buildUrl + "/Build.wasm.zip", "application/wasm");
+        progressBarFull.style.width = "70%";
+
+        setStatus("Starting game...");
+        await loadScript(loaderUrl);
+
+        if (typeof createUnityInstance !== "function") {
+          throw new Error("Unity loader did not start correctly.");
+        }
+
+        const loadedUnityGameInstance = await createUnityInstance(canvas, config, function (progress) {
+          progressBarFull.style.width = Math.max(70, progress * 100) + "%";
+        });
+        unityGameInstance = loadedUnityGameInstance;
+        window.unityGameInstance = unityGameInstance;
+        while (unityMessageQueue.length) {
+          unityGameInstance.SendMessage.apply(unityGameInstance, unityMessageQueue.shift());
+        }
+
+        loadingBar.style.display = "none";
+        setStatus("");
+      }
+
+      async function unzipSingleFile(url, mimeType) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error("Could not download " + url + " (" + response.status + ").");
+        }
+
+        const zip = await window.JSZip.loadAsync(await response.arrayBuffer());
+        const entryName = Object.keys(zip.files).find(function (name) {
+          return !zip.files[name].dir;
+        });
+
+        if (!entryName) {
+          throw new Error("No usable file was found inside " + url + ".");
+        }
+
+        const fileData = await zip.files[entryName].async("arraybuffer");
+        return URL.createObjectURL(new Blob([fileData], { type: mimeType }));
+      }
+
+      function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+          const script = document.createElement("script");
+          script.src = src;
+          script.onload = resolve;
+          script.onerror = function () {
+            reject(new Error("Could not load " + src + "."));
+          };
+          document.body.appendChild(script);
+        });
+      }
+
+      function setStatus(message) {
+        statusText.textContent = message;
+      }
+
+      function showBanner(message, type) {
+        if (type !== "error") {
+          console.warn(message);
+          return;
+        }
+
+        warningBanner.textContent = message;
+        warningBanner.style.display = "block";
+      }
+    }());
+  </script>
+</body>
+</html>

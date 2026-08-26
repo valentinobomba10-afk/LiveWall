@@ -1,15 +1,22 @@
 import AppKit
 import SwiftUI
 import ServiceManagement
+import Carbon.HIToolbox
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var window: NSWindow?
     private let displays = DisplayObserver()
     private lazy var controller = WallpaperController(displays: displays)
     private lazy var library = LibraryStore()
+    private lazy var movies = MovieStore()
     private lazy var viewModel = WallpaperViewModel(controller: controller, displayObserver: displays, library: library)
+    // Desktop widgets live in their own window layer, one level above the
+    // wallpaper overlay, so they stay visible while it animates.
+    private let widgetStore = WidgetStore.shared
+    private lazy var widgetLayer = WidgetLayerController(store: widgetStore, displays: displays)
     private let power = PowerMonitor()
     private var statusItem: NSStatusItem?
+    private var turnOffHotKey: EventHotKeyRef?
     private var fullscreenTimer: Timer?
     private let fullscreen = FullscreenDetectionService()
     private var keepRunningInBackground: Bool { UserDefaults.standard.object(forKey: "keepRunningInBackground") as? Bool ?? true }
@@ -26,9 +33,17 @@ import ServiceManagement
             "pauseOnFullscreen": false,
             "pauseWhenHidden": false
         ])
-        // Keep the wallpaper service alive across sign-ins. The control window
-        // can still be closed; the explicit Quit command is required to stop it.
-        try? LaunchAtLoginService.setEnabled(true)
+        // Launch-at-login is opt-in (Settings), default off. Forcing it on every
+        // start auto-started the app as a login background process, which raced
+        // the system menu-bar agent and crashed the status item — and is
+        // user-hostile for a public app besides.
+        if UserDefaults.standard.object(forKey: "launchAtLogin") == nil {
+            UserDefaults.standard.set(false, forKey: "launchAtLogin")
+        }
+        try? LaunchAtLoginService.setEnabled(UserDefaults.standard.bool(forKey: "launchAtLogin"))
+        // Bring the widget layer up at launch so saved widgets restore
+        // themselves onto the right displays without opening the window.
+        _ = widgetLayer
         setUpMenu()
         showControlWindow()
         NSApp.activate(ignoringOtherApps: true)
@@ -40,13 +55,25 @@ import ServiceManagement
             let enabled = UserDefaults.standard.object(forKey: "pauseOnFullscreen") as? Bool ?? false
             self.controller.setExternalPaused(enabled && self.fullscreen.anotherAppIsFullscreen)
         }
-        setUpStatusItem()
+        // Create the menu-bar item once the app is actually active. Building it
+        // during launch (especially a login-launched background start) races the
+        // system menu-bar agent's scene connection, which crashed in AppKit.
+        DispatchQueue.main.async { [weak self] in self?.setUpStatusItem() }
         controller.onChange = { [weak self] in self?.persistState() }
-        // Do not restore or start a wallpaper until this Mac has completed the
-        // required LiveWall sign-up screen.
-        if UserDefaults.standard.bool(forKey: "liveWallSignedUp") {
-            if restoreEnabled { restoreState() }
-            if UserDefaults.standard.bool(forKey: "updateNotificationsEnabled") { viewModel.checkForUpdates(silent: true) }
+        registerTurnOffHotKey()
+        // The sign-up gate is gone, so the saved wallpaper restores immediately.
+        if restoreEnabled { restoreState() }
+        if UserDefaults.standard.bool(forKey: "updateNotificationsEnabled") { viewModel.checkForUpdates(silent: true) }
+        // Anonymous install ping. No-ops unless a Supabase project is configured
+        // in Analytics.swift and the user has left the Settings toggle on.
+        Analytics.recordLaunch()
+        Analytics.checkStatus { banned in
+            Task { @MainActor in
+                Analytics.isBanned = banned
+                // A banned install stops running wallpapers rather than
+                // pretending to work. It does nothing else to the computer.
+                if banned { self.controller.stop() }
+            }
         }
         UserDefaults.standard.set(true, forKey: "startupPromptShown")
     }
@@ -57,8 +84,13 @@ import ServiceManagement
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let root = LiveWallRootView(vm: viewModel, library: library)
+        let root = LiveWallRootView(vm: viewModel, library: library, movies: movies)
         let hosting = NSHostingView(rootView: root)
+        // Without this, NSHostingView pushes the SwiftUI content's own minimum
+        // size up as a window constraint, so the window refuses to shrink past
+        // whatever the widest row happens to need. The layout is adaptive, so
+        // let the window drive the size instead of the content.
+        hosting.sizingOptions = []
         let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 740),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                            backing: .buffered, defer: false)
@@ -69,7 +101,7 @@ import ServiceManagement
         win.backgroundColor = .clear
         win.contentView = hosting
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 940, height: 640)
+        win.minSize = NSSize(width: 720, height: 520)
         win.center()
         win.setFrameAutosaveName("LiveWallMainWindow")
         win.makeKeyAndOrderFront(nil)
@@ -172,6 +204,7 @@ import ServiceManagement
     // MARK: - Menu-bar control
 
     private func setUpStatusItem() {
+        guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "sparkles.tv", accessibilityDescription: "LiveWall")
         let menu = NSMenu()
@@ -210,9 +243,14 @@ import ServiceManagement
             symbol: viewModel.muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
             key: "m", action: #selector(menuToggleMute))
         menu.addItem(.separator())
+        add("Turn Off Wallpaper", subtitle: "Back to your normal desktop  \(HotKey.display)",
+            symbol: "xmark.circle.fill", action: #selector(menuTurnOff), enabled: viewModel.isRunning)
+        menu.addItem(.separator())
         add("Quit LiveWall", symbol: "power", key: "q",
             action: #selector(NSApplication.terminate(_:)), target: nil, destructive: true)
     }
+
+    @objc private func menuTurnOff() { viewModel.restoreNormalDesktop() }
 
     @objc private func menuTogglePlay() { viewModel.togglePlay() }
     @objc private func menuStop() { viewModel.stop() }
@@ -227,6 +265,35 @@ import ServiceManagement
         let current = items.firstIndex { $0.id == viewModel.runningItemID } ?? (direction > 0 ? -1 : 0)
         let next = (current + direction + items.count) % items.count
         viewModel.apply(items[next])
+    }
+
+    private var hotKeyHandlerInstalled = false
+
+    /// Registers the user's custom global shortcut for "turn off wallpaper".
+    /// Re-called whenever the shortcut changes. The Carbon event handler is
+    /// installed once; only the key registration is swapped.
+    private func registerTurnOffHotKey() {
+        if !hotKeyHandlerInstalled {
+            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                     eventKind: UInt32(kEventHotKeyPressed))
+            InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
+                guard let userData else { return noErr }
+                let me = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
+                DispatchQueue.main.async { me.viewModel.restoreNormalDesktop() }
+                return noErr
+            }, 1, &spec, Unmanaged.passUnretained(self).toOpaque(), nil)
+            hotKeyHandlerInstalled = true
+
+            // Re-register when the user records a new shortcut in Settings.
+            NotificationCenter.default.addObserver(forName: HotKey.changed, object: nil, queue: .main) { [weak self] _ in
+                self?.registerTurnOffHotKey()
+            }
+        }
+
+        if let existing = turnOffHotKey { UnregisterEventHotKey(existing); turnOffHotKey = nil }
+        let id = EventHotKeyID(signature: OSType(0x4C575446), id: 1)   // 'LWTF'
+        RegisterEventHotKey(HotKey.keyCode, HotKey.carbonModifiers, id,
+                            GetApplicationEventTarget(), 0, &turnOffHotKey)
     }
 
     @objc private func menuToggleLogin() {

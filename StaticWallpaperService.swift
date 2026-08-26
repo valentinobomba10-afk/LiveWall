@@ -23,7 +23,33 @@ import Foundation
         } catch { NSLog("[LiveWall] Could not set static wallpaper: \(error.localizedDescription)") }
     }
 
+    private static let originalKey = "liveWallOriginalDesktop"
+
+    /// Records the user's real desktop picture per display, once, before LiveWall
+    /// ever overwrites it with a still — so "Turn Off" can put it back.
+    static func saveOriginalIfNeeded() {
+        var saved = UserDefaults.standard.dictionary(forKey: originalKey) as? [String: String] ?? [:]
+        for screen in NSScreen.screens {
+            let id = String(DisplayObserver.displayID(for: screen))
+            guard saved[id] == nil, let url = NSWorkspace.shared.desktopImageURL(for: screen) else { continue }
+            // Never record one of our own stills as the "original".
+            if !url.path.contains("LiveWall/StillWallpapers") { saved[id] = url.path }
+        }
+        UserDefaults.standard.set(saved, forKey: originalKey)
+    }
+
+    /// Restores the saved original desktop picture on every display.
+    static func restoreOriginal() {
+        let saved = UserDefaults.standard.dictionary(forKey: originalKey) as? [String: String] ?? [:]
+        for screen in NSScreen.screens {
+            let id = String(DisplayObserver.displayID(for: screen))
+            guard let path = saved[id] else { continue }
+            try? NSWorkspace.shared.setDesktopImageURL(URL(fileURLWithPath: path), for: screen, options: [:])
+        }
+    }
+
     private static func setDesktopImage(_ url: URL, displayIDs: Set<CGDirectDisplayID>) {
+        saveOriginalIfNeeded()   // capture the true original before overwriting it
         for screen in NSScreen.screens where displayIDs.contains(DisplayObserver.displayID(for: screen)) {
             do { try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:]) }
             catch { NSLog("[LiveWall] Could not set picture background: \(error.localizedDescription)") }

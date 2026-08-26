@@ -24,18 +24,19 @@ struct LibraryItem: Identifiable, Codable, Hashable {
     var urlString: String?
     var thumbnailURLString: String?
     var youTubeID: String?
+    var category: String?          // set when the source tells us (e.g. MotionBGS tag)
     var dateAdded = Date()
 
     init(id: UUID = UUID(), title: String, kind: ItemKind, bookmark: Data? = nil,
          urlString: String? = nil, thumbnailURLString: String? = nil,
-         youTubeID: String? = nil, dateAdded: Date = Date()) {
+         youTubeID: String? = nil, category: String? = nil, dateAdded: Date = Date()) {
         self.id = id; self.title = title; self.kind = kind; self.bookmark = bookmark
         self.urlString = urlString; self.thumbnailURLString = thumbnailURLString
-        self.youTubeID = youTubeID; self.dateAdded = dateAdded
+        self.youTubeID = youTubeID; self.category = category; self.dateAdded = dateAdded
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, kind, bookmark, urlString, thumbnailURLString, youTubeID, dateAdded
+        case id, title, kind, bookmark, urlString, thumbnailURLString, youTubeID, category, dateAdded
     }
 
     init(from decoder: Decoder) throws {
@@ -47,6 +48,7 @@ struct LibraryItem: Identifiable, Codable, Hashable {
         urlString = try c.decodeIfPresent(String.self, forKey: .urlString)
         thumbnailURLString = try c.decodeIfPresent(String.self, forKey: .thumbnailURLString)
         youTubeID = try c.decodeIfPresent(String.self, forKey: .youTubeID)
+        category = try c.decodeIfPresent(String.self, forKey: .category)
         dateAdded = try c.decodeIfPresent(Date.self, forKey: .dateAdded) ?? Date()
     }
 
@@ -55,7 +57,8 @@ struct LibraryItem: Identifiable, Codable, Hashable {
         try c.encode(id, forKey: .id); try c.encode(title, forKey: .title); try c.encode(kind, forKey: .kind)
         try c.encodeIfPresent(bookmark, forKey: .bookmark); try c.encodeIfPresent(urlString, forKey: .urlString)
         try c.encodeIfPresent(thumbnailURLString, forKey: .thumbnailURLString)
-        try c.encodeIfPresent(youTubeID, forKey: .youTubeID); try c.encode(dateAdded, forKey: .dateAdded)
+        try c.encodeIfPresent(youTubeID, forKey: .youTubeID); try c.encodeIfPresent(category, forKey: .category)
+        try c.encode(dateAdded, forKey: .dateAdded)
     }
 
     var subtitle: String {
@@ -182,6 +185,9 @@ final class LibraryStore: ObservableObject {
 /// Generates a still frame for local / direct video thumbnails.
 enum ThumbnailGenerator {
     static func frame(url: URL) async -> NSImage? {
+        // Only extract frames from local files. Opening a remote video just to
+        // grab a poster frame stalls badly and was a source of UI freezes.
+        guard url.isFileURL else { return nil }
         let asset = AVURLAsset(url: url)
         let gen = AVAssetImageGenerator(asset: asset)
         gen.appliesPreferredTrackTransform = true

@@ -1,6 +1,10 @@
 import AppKit
 import IOKit.ps
 
+extension Notification.Name {
+    static let liveWallPowerSettingsChanged = Notification.Name("LiveWallPowerSettingsChanged")
+}
+
 /// Watches power/session state and reports whether wallpaper playback should pause.
 /// Lock and display sleep always pause (nothing is visible); battery and Low Power
 /// Mode are user-configurable via UserDefaults.
@@ -34,6 +38,9 @@ final class PowerMonitor {
         registerPowerSource()
 
         let nc = NotificationCenter.default
+        nc.addObserver(forName: .liveWallPowerSettingsChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.settingsChanged()
+        }
         nc.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
             self?.lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled; self?.emit()
         }

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="UTF-8">
+  <title>Among Us Fan Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
+  <link rel="apple-touch-icon" sizes="256x256" href="https://cdn.jsdelivr.net/gh/mamayaya1/game@f3a882424a8f28d07bdf456b251d889725c4c1e4/projects/among-us/img/red.png">
+  <link rel="icon" type="image/png" href="https://cdn.jsdelivr.net/gh/mamayaya1/game@f3a882424a8f28d07bdf456b251d889725c4c1e4/projects/among-us/img/red.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mamayaya1/game@f3a882424a8f28d07bdf456b251d889725c4c1e4/projects/among-us/style.css">
+</head>
+<body>
+  <script>
+    const gameCdnRoot = "https://cdn.jsdelivr.net/gh/mamayaya1/game@f3a882424a8f28d07bdf456b251d889725c4c1e4/projects/among-us/";
+    const pathfindingWorkerScripts = {
+      "redblackset.js": gameCdnRoot + "redblackset.js",
+      "pathfind.js": gameCdnRoot + "pathfind.js"
+    };
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = function (resource, init) {
+      const url = resource instanceof Request ? resource.url : String(resource);
+      const filename = url.split(/[?#]/, 1)[0].replace(/\\/g, "/").split("/").pop();
+      const replacement = pathfindingWorkerScripts[filename];
+
+      if (!replacement) {
+        return originalFetch(resource, init);
+      }
+
+      if (resource instanceof Request) {
+        return originalFetch(new Request(replacement, resource), init);
+      }
+
+      return originalFetch(replacement, init);
+    };
+
+    const originalAlert = window.alert.bind(window);
+    window.alert = function (message) {
+      if (typeof message === "string" && message.includes("Exported games won't work until you upload them")) {
+        return;
+      }
+
+      originalAlert(message);
+    };
+
+    window.addEventListener("keydown", function (event) {
+      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
+        event.preventDefault();
+      }
+    }, false);
+  </script>
+
+  <noscript>
+    <div id="notSupportedWrap">
+      <h2 id="notSupportedTitle">This content requires JavaScript</h2>
+      <p class="notSupportedMessage">JavaScript appears to be disabled. Please enable it to view this content.</p>
+    </div>
+  </noscript>
+
+  <script src="https://cdn.jsdelivr.net/gh/mamayaya1/game@f3a882424a8f28d07bdf456b251d889725c4c1e4/projects/among-us/scripts/supportcheck.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/mamayaya1/game@f3a882424a8f28d07bdf456b251d889725c4c1e4/projects/among-us/scripts/offlineclient.js" type="module"></script>
+  <script src="https://cdn.jsdelivr.net/gh/gahaden/ags@4f1a2b8755bcbf67ba043a7eca6c2e05d0b5bfe5/main.js" type="module"></script>
+</body>
+</html>

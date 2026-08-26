@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Traffic Rider</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #13141e;
+      }
+
+      #unity-canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        outline: none;
+        background: #13141e;
+      }
+
+      #loading {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        color: #f9faff;
+        font-family: Arial, Helvetica, sans-serif;
+        background: linear-gradient(180deg, #090c15 0%, #16143c 52%, #452a65 100%);
+      }
+
+      #loading-title {
+        font-size: clamp(28px, 7vw, 58px);
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      #loading-text {
+        font-size: 16px;
+        opacity: 0.78;
+      }
+
+      #progress-shell {
+        width: min(420px, 72vw);
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      #progress-bar {
+        width: 0%;
+        height: 100%;
+        background: #ffcf32;
+        transition: width 0.15s ease;
+      }
+
+      #error-box {
+        display: none;
+        width: min(520px, 86vw);
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.28);
+        color: #fff;
+        line-height: 1.45;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+    <div id="loading">
+      <div id="loading-title">Traffic Rider</div>
+      <div id="loading-text">Loading game files...</div>
+      <div id="progress-shell">
+        <div id="progress-bar"></div>
+      </div>
+      <div id="error-box"></div>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var buildRoot = "https://files.crazygames.com/traffic-rider-vvq/90";
+        var canvas = document.getElementById("unity-canvas");
+        var loading = document.getElementById("loading");
+        var loadingText = document.getElementById("loading-text");
+        var progressBar = document.getElementById("progress-bar");
+        var errorBox = document.getElementById("error-box");
+
+        function resizeCanvas() {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          canvas.style.width = window.innerWidth + "px";
+          canvas.style.height = window.innerHeight + "px";
+        }
+
+        function showError(message) {
+          loading.style.display = "flex";
+          progressBar.style.background = "#ff4f61";
+          errorBox.style.display = "block";
+          errorBox.textContent = message;
+        }
+
+        function updateProgress(progress) {
+          var percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+          progressBar.style.width = percent + "%";
+          loadingText.textContent = "Loading game files... " + percent + "%";
+        }
+
+        window.addEventListener("load", resizeCanvas);
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+
+        var config = {
+          dataUrl: buildRoot + "/Build/y8.data.br",
+          frameworkUrl: buildRoot + "/Build/y8.framework.js.br",
+          codeUrl: buildRoot + "/Build/y8.wasm.br",
+          streamingAssetsUrl: buildRoot + "/StreamingAssets",
+          companyName: "Traffic Rider",
+          productName: "Traffic Rider",
+          productVersion: "1.0.0",
+          showBanner: function (message, type) {
+            if (type === "error") {
+              showError(message);
+            } else {
+              console.warn(message);
+            }
+          }
+        };
+
+        var script = document.createElement("script");
+        script.src = buildRoot + "/Build/y8.loader.js";
+        script.onload = function () {
+          createUnityInstance(canvas, config, updateProgress).then(function (unityInstance) {
+            window.gameInstance = unityInstance;
+            loading.style.display = "none";
+            canvas.focus();
+          }).catch(function (error) {
+            console.error(error);
+            showError(String(error || "Traffic Rider could not start."));
+          });
+        };
+        script.onerror = function () {
+          showError("Traffic Rider could not load the Unity loader. Check your internet connection or site blocker.");
+        };
+        document.body.appendChild(script);
+      })();
+    </script>
+  </body>
+</html>

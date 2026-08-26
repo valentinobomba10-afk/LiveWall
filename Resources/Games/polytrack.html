@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <base href="https://cdn.jsdelivr.net/gh/genizy/polytrack@feb7f045e85fdf07e0d7f7e6d0f08984b9fe20d6/" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no"
+    />
+    <link rel="preload" href="forced_square.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="preload" href="images/logo.svg" as="image" type="image/svg+xml" />
+    <link rel="preload" href="images/discord.svg" as="image" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.json" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #050812;
+        color: #ecf4ff;
+        font-family: system-ui, sans-serif;
+      }
+
+      #screen,
+      #ui,
+      #transition-layer {
+        position: absolute;
+        inset: 0;
+      }
+
+      #polytrack-error {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(circle at top, rgba(71, 116, 255, 0.18), transparent 34%),
+          rgba(5, 8, 18, 0.96);
+        z-index: 99999;
+        padding: 24px;
+        text-align: center;
+      }
+
+      #polytrack-error.open {
+        display: flex;
+      }
+
+      .polytrack-error-card {
+        max-width: 520px;
+        padding: 24px 26px;
+        border-radius: 22px;
+        border: 1px solid rgba(108, 155, 255, 0.35);
+        background: rgba(10, 18, 36, 0.9);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      }
+
+      .polytrack-error-card h1 {
+        margin: 0 0 10px;
+        font-size: 1.45rem;
+      }
+
+      .polytrack-error-card p {
+        margin: 0;
+        line-height: 1.5;
+        color: rgba(231, 240, 255, 0.82);
+      }
+    </style>
+    <script>
+      (() => {
+        const ASSET_ROOT = new URL(document.querySelector('base')?.href || location.href, location.href);
+        const WORKER_FILE = 'simulation_worker.bundle.js';
+        const SCRIPT_FILES = ['error_screen.bundle.js', 'main.bundle.js'];
+        const ogWorker = window.Worker;
+        const ogFetch = window.fetch.bind(window);
+        const ogXmlOpen = XMLHttpRequest.prototype.open;
+        let simulationWorkerUrl = null;
+
+        function absoluteAssetUrl(path) {
+          return new URL(path, ASSET_ROOT).href;
+        }
+
+        function rewriteRemoteHost(url) {
+          return String(url || '').replace('vps.kodub.com', 'vpskodub.tmena1565.workers.dev');
+        }
+
+        function showFatalError(message) {
+          const root = document.getElementById('polytrack-error');
+          if (!root) return;
+          root.classList.add('open');
+          const body = root.querySelector('p');
+          if (body) {
+            body.textContent = message;
+          }
+        }
+
+        function loadScript(src) {
+          return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.defer = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error(`Failed to load ${src}`));
+            document.head.appendChild(script);
+          });
+        }
+
+        window.fetch = function (input, init) {
+          if (typeof input === 'string') {
+            return ogFetch(rewriteRemoteHost(input), init);
+          }
+          if (input instanceof Request) {
+            return ogFetch(new Request(rewriteRemoteHost(input.url), input), init);
+          }
+          return ogFetch(input, init);
+        };
+
+        XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+          return ogXmlOpen.call(this, method, typeof url === 'string' ? rewriteRemoteHost(url) : url, ...rest);
+        };
+
+        window.Worker = function (scriptUrl, options) {
+          const requested = String(scriptUrl || '');
+          const normalized = requested.split('?')[0];
+          if (normalized === WORKER_FILE || normalized.endsWith(`/${WORKER_FILE}`)) {
+            if (!simulationWorkerUrl) {
+              throw new Error('PolyTrack worker bootstrap not ready.');
+            }
+            return new ogWorker(simulationWorkerUrl, options);
+          }
+          return new ogWorker(requested, options);
+        };
+        window.Worker.prototype = ogWorker.prototype;
+
+        window.addEventListener('unhandledrejection', (event) => {
+          const reason = String(event?.reason?.message || event?.reason || '');
+          if (reason.includes('Worker')) {
+            event.preventDefault();
+            showFatalError('PolyTrack could not start its worker process. Refresh the page and try again.');
+          }
+        });
+
+        async function bootstrap() {
+          try {
+            const workerResponse = await ogFetch(absoluteAssetUrl(WORKER_FILE), { mode: 'cors', credentials: 'omit' });
+            if (!workerResponse.ok) {
+              throw new Error(`Worker fetch failed (${workerResponse.status})`);
+            }
+
+            const workerSource = await workerResponse.text();
+            if (!workerSource.trim()) {
+              throw new Error('Worker file was empty.');
+            }
+
+            simulationWorkerUrl = URL.createObjectURL(
+              new Blob([workerSource.replaceAll('replacethisplease', ASSET_ROOT.href)], {
+                type: 'application/javascript'
+              })
+            );
+
+            for (const file of SCRIPT_FILES) {
+              await loadScript(absoluteAssetUrl(file));
+            }
+          } catch (error) {
+            console.error('PolyTrack bootstrap failed', error);
+            showFatalError('PolyTrack failed to load. Please refresh or try again later.');
+          }
+        }
+
+        bootstrap();
+      })();
+    </script>
+  </head>
+  <body>
+    <canvas id="screen"></canvas>
+    <div id="ui"></div>
+    <div id="transition-layer"></div>
+    <div id="polytrack-error" aria-live="polite">
+      <div class="polytrack-error-card">
+        <h1>PolyTrack could not load</h1>
+        <p>Please refresh the page and try again.</p>
+      </div>
+    </div>
+  </body>
+</html>

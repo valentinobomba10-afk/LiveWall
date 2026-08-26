@@ -129,6 +129,13 @@ final class WallpaperController {
                 kind = .localVideo(url)
             case "direct":
                 guard let url = URL(string: p.value) else { continue }
+                if url.host?.contains("drive") == true,
+                   !MovieCatalog.driveMovies.contains(where: { $0.urlString == p.value }) {
+                    // Do not restore movies removed from the verified catalog.
+                    // Old Drive entries can return quota/error HTML forever and
+                    // otherwise leave users with a black desktop after updating.
+                    continue
+                }
                 kind = .directURL(url)
             case "image":
                 let url = URL(fileURLWithPath: p.value)
@@ -138,6 +145,7 @@ final class WallpaperController {
                 kind = .youTube(p.value)
             case "web":
                 guard let url = URL(string: p.value) else { continue }
+                guard url.host?.hasSuffix("1flex.org") != true else { continue }
                 kind = .web(url)
             default:
                 continue
@@ -152,7 +160,10 @@ final class WallpaperController {
     private var pauseWhenHidden: Bool { UserDefaults.standard.bool(forKey: "pauseWhenHidden") } // opt-in, default false
     private func shouldPlay(_ id: CGDirectDisplayID) -> Bool {
         if isPaused || powerPaused || externalPaused { return false }
-        if pauseWhenHidden && covered.contains(id) { return false }   // occlusion pause is opt-in
+        // NSWindow occlusion is not trustworthy for a desktop-level window:
+        // Finder's own desktop window is reported as covering LiveWall, which
+        // can pause every wallpaper permanently. Fullscreen and power pausing
+        // are handled by their dedicated, reliable policies instead.
         return true
     }
     private func applyPlaybackState() {
@@ -161,8 +172,14 @@ final class WallpaperController {
 
     /// Tracks the cursor without receiving mouse clicks, so interactive wallpapers
     /// respond while the normal desktop remains completely usable.
+    /// Only interactive (web) wallpapers use the pointer. Skip the 30 fps work
+    /// entirely for ordinary video/image wallpapers — the common case.
+    private var hasInteractiveWallpaper: Bool {
+        requests.values.contains { if case .web = $0.kind { return true } else { return false } }
+    }
+
     private func sendPointerPosition() {
-        guard !windows.isEmpty else { return }
+        guard !windows.isEmpty, hasInteractiveWallpaper else { return }
         let mouse = NSEvent.mouseLocation
         for (id, window) in windows {
             let frame = window.frame
@@ -173,7 +190,15 @@ final class WallpaperController {
         }
     }
     private func setCovered(_ id: CGDirectDisplayID, _ isCovered: Bool) {
-        if isCovered { covered.insert(id) } else { covered.remove(id) }
+        // The control window itself sits above the desktop overlay. AppKit then
+        // reports the wallpaper as occluded, which used to pause a newly chosen
+        // movie the instant the user pressed “Set as Background”. Keep playback
+        // active while LiveWall is frontmost; occlusion pausing is only for
+        // other applications covering the desktop.
+        let coveredByLiveWall = isCovered && NSApp.isActive && NSApp.windows.contains {
+            $0.isVisible && !($0 is DesktopWindow)
+        }
+        if isCovered && !coveredByLiveWall { covered.insert(id) } else { covered.remove(id) }
         if let r = renderers[id] { shouldPlay(id) ? r.play() : r.pause() }
     }
 
@@ -190,12 +215,61 @@ final class WallpaperController {
         renderer.view.frame = container.bounds
         renderer.view.autoresizingMask = [.width, .height]
         container.addSubview(renderer.view)
+        addWatermark(to: container, screen: screen)
         window.applyColorControls(brightness: visualBrightness, saturation: visualSaturation)
         windows[id] = window
         renderers[id] = renderer
         window.orderFrontRegardless()
         renderer.start()
         if !shouldPlay(id) { renderer.pause() }
+    }
+
+    /// A small "LiveWall" badge in the bottom-right of the live wallpaper itself,
+    /// so the branding sits on the desktop, not just in the control window.
+    private func addWatermark(to container: NSView, screen: NSScreen) {
+        let badge = NSView()
+        badge.wantsLayer = true
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.28).cgColor
+        badge.layer?.cornerRadius = 22
+        badge.layer?.cornerCurve = .continuous
+
+        let mark = NSView()
+        mark.wantsLayer = true
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        mark.layer?.cornerRadius = 9
+        mark.layer?.cornerCurve = .continuous
+        let grad = CAGradientLayer()
+        grad.colors = [NSColor.systemPurple.cgColor, NSColor.systemBlue.cgColor]
+        grad.startPoint = CGPoint(x: 0, y: 0); grad.endPoint = CGPoint(x: 1, y: 1)
+        grad.frame = CGRect(x: 0, y: 0, width: 34, height: 34)
+        grad.cornerRadius = 9
+        mark.layer?.addSublayer(grad)
+
+        let label = NSTextField(labelWithString: "LiveWall")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 22, weight: .bold)
+        label.textColor = NSColor.white.withAlphaComponent(0.9)
+        label.backgroundColor = .clear
+        label.isBordered = false
+
+        badge.addSubview(mark)
+        badge.addSubview(label)
+        container.addSubview(badge)
+
+        NSLayoutConstraint.activate([
+            mark.widthAnchor.constraint(equalToConstant: 34),
+            mark.heightAnchor.constraint(equalToConstant: 34),
+            mark.leadingAnchor.constraint(equalTo: badge.leadingAnchor, constant: 13),
+            mark.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: mark.trailingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: badge.trailingAnchor, constant: -16),
+            label.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
+            badge.heightAnchor.constraint(equalToConstant: 44),
+            badge.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -28),
+            badge.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -28),
+        ])
+        badge.alphaValue = 0.85
     }
 
     private func removeWindow(_ id: CGDirectDisplayID) {
@@ -232,15 +306,23 @@ final class WallpaperController {
 
     private func makeRenderer(for request: Request) -> WallpaperRenderer {
         switch request.kind {
-        case .localVideo(let url), .directURL(let url):
+        case .localVideo(let url):
             return VideoWallpaperRenderer(url: url, muted: request.muted, volume: request.volume,
                                           loops: request.loops, scaling: request.scaling)
+        case .directURL(let url):
+            if url.host?.contains("drive") == true {
+                return GoogleDriveStreamWallpaperRenderer(downloadURL: url, muted: request.muted,
+                                                           volume: request.volume, loops: request.loops,
+                                                           scaling: request.scaling)
+            }
+            return HTML5VideoWallpaperRenderer(url: url, muted: request.muted, volume: request.volume,
+                                               loops: request.loops, scaling: request.scaling)
         case .localImage(let url):
             return ImageWallpaperRenderer(url: url, scaling: request.scaling)
         case .youTube(let id):
             return YouTubeWallpaperRenderer(videoID: id, muted: request.muted)
         case .web(let url):
-            return InteractiveWebWallpaperRenderer(url: url)
+            return InteractiveWebWallpaperRenderer(url: url, muted: request.muted, volume: request.volume)
         }
     }
 }

@@ -145,4 +145,18 @@ xcodegen generate   # reads project.yml
 open LiveWall.xcodeproj
 ```
 
+**Lock screen component:**
+```bash
+./LockScreen/build-saver.sh                                   # -> LockScreen/build/LiveWall.saver
+cp -R LockScreen/build/LiveWall.saver LiveWall.app/Contents/Resources/
+```
+macOS has no API for drawing on the lock screen — while the Mac is locked, `loginwindow`
+owns the display and the user session (including LiveWall's desktop overlay) is not
+composited. A screen saver *is* hosted by `loginwindow`, so LiveWall ships one:
+`LockScreen/LiveWallSaverView.swift` builds into `LiveWall.saver`, and
+[`LockScreenService.swift`](LockScreenService.swift) installs it into
+`~/Library/Screen Savers` with the current wallpaper copied inside the bundle (the
+screen saver host is sandboxed and can't read the user's own folders). The app bundle
+must contain the built `.saver` or the **Play when locked** toggle reports it's missing.
+
 Start with [`docs/implementation-plan.md`](docs/implementation-plan.md), and self-check every change against [`docs/code-review-checklist.md`](docs/code-review-checklist.md). The current review of the initial skeleton is in [`docs/review-001-initial-skeleton.md`](docs/review-001-initial-skeleton.md).

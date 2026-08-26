@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Orbit Dash Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050814;
+        --text: #f7fbff;
+        --muted: #8fa3c7;
+        --cyan: #57d5ff;
+        --green: #28f0a8;
+        --pink: #ff5f87;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(87, 213, 255, 0.22), transparent 28rem),
+          radial-gradient(circle at 80% 70%, rgba(255, 95, 135, 0.2), transparent 26rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .game {
+        position: relative;
+        width: min(100vw, 1180px);
+        height: min(100vh, 680px);
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+          linear-gradient(135deg, rgba(10, 16, 32, 0.96), rgba(5, 8, 20, 0.98));
+        background-size: 44px 44px, 44px 44px, auto;
+      }
+
+      .hud {
+        position: absolute;
+        top: 18px;
+        left: 18px;
+        z-index: 5;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .chip {
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 10px 14px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 800;
+        backdrop-filter: blur(16px);
+      }
+
+      .chip strong {
+        color: var(--text);
+      }
+
+      .ship {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: 4;
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--cyan), var(--green));
+        box-shadow: 0 0 28px rgba(87, 213, 255, 0.6);
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+
+      .ship::after {
+        position: absolute;
+        inset: 10px;
+        content: "";
+        border-radius: 50%;
+        background: rgba(5, 8, 20, 0.45);
+      }
+
+      .shard,
+      .hazard {
+        position: absolute;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      .shard {
+        width: 24px;
+        height: 24px;
+        background: var(--green);
+        box-shadow: 0 0 22px rgba(40, 240, 168, 0.7);
+      }
+
+      .hazard {
+        width: 54px;
+        height: 54px;
+        border: 2px solid rgba(255, 95, 135, 0.82);
+        box-shadow: 0 0 26px rgba(255, 95, 135, 0.42), inset 0 0 22px rgba(255, 95, 135, 0.18);
+      }
+
+      .center-copy {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        text-align: center;
+        background: rgba(5, 8, 20, 0.38);
+        backdrop-filter: blur(10px);
+      }
+
+      .panel {
+        width: min(520px, 100%);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+        padding: clamp(24px, 5vw, 42px);
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(2.4rem, 8vw, 4.6rem);
+        line-height: 0.94;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0 0 22px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      button {
+        min-height: 48px;
+        border: 0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--cyan), #8d7bff);
+        color: #06101a;
+        padding: 0 20px;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 900;
+      }
+
+      .hide {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="game" id="game">
+      <div class="hud">
+        <div class="chip">Score <strong id="score">0</strong></div>
+        <div class="chip">Time <strong id="time">45</strong></div>
+        <div class="chip">Move with WASD or arrows</div>
+      </div>
+      <div class="ship" id="ship" aria-hidden="true"></div>
+      <div class="center-copy" id="intro">
+        <div class="panel">
+          <h1>Orbit Dash</h1>
+          <p>Collect green shards while avoiding pulse rings. This is a lightweight placeholder HTML game for the LogiSchool iframe system.</p>
+          <button id="startButton">Start demo</button>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      const game = document.querySelector("#game");
+      const ship = document.querySelector("#ship");
+      const scoreLabel = document.querySelector("#score");
+      const timeLabel = document.querySelector("#time");
+      const intro = document.querySelector("#intro");
+      const startButton = document.querySelector("#startButton");
+
+      const keys = new Set();
+      const state = {
+        running: false,
+        score: 0,
+        time: 45,
+        x: 0.5,
+        y: 0.5,
+        shards: [],
+        hazards: [],
+        last: 0
+      };
+
+      window.addEventListener("keydown", (event) => keys.add(event.key.toLowerCase()));
+      window.addEventListener("keyup", (event) => keys.delete(event.key.toLowerCase()));
+      startButton.addEventListener("click", start);
+
+      function start() {
+        state.running = true;
+        state.score = 0;
+        state.time = 45;
+        state.x = 0.5;
+        state.y = 0.5;
+        state.last = performance.now();
+        intro.classList.add("hide");
+        clearItems();
+        for (let i = 0; i < 7; i += 1) spawnShard();
+        for (let i = 0; i < 5; i += 1) spawnHazard();
+        requestAnimationFrame(loop);
+        timer();
+      }
+
+      function timer() {
+        if (!state.running) return;
+        state.time -= 1;
+        timeLabel.textContent = state.time;
+        if (state.time <= 0) {
+          end(`Score ${state.score}`);
+          return;
+        }
+        setTimeout(timer, 1000);
+      }
+
+      function loop(now) {
+        if (!state.running) return;
+        const dt = Math.min(32, now - state.last) / 1000;
+        state.last = now;
+        updateShip(dt);
+        checkCollisions();
+        requestAnimationFrame(loop);
+      }
+
+      function updateShip(dt) {
+        const speed = 0.42;
+        const left = keys.has("arrowleft") || keys.has("a");
+        const right = keys.has("arrowright") || keys.has("d");
+        const up = keys.has("arrowup") || keys.has("w");
+        const down = keys.has("arrowdown") || keys.has("s");
+
+        state.x += (right - left) * speed * dt;
+        state.y += (down - up) * speed * dt;
+        state.x = Math.max(0.04, Math.min(0.96, state.x));
+        state.y = Math.max(0.08, Math.min(0.92, state.y));
+        ship.style.left = `${state.x * 100}%`;
+        ship.style.top = `${state.y * 100}%`;
+      }
+
+      function checkCollisions() {
+        const rect = game.getBoundingClientRect();
+        const shipPoint = { x: state.x * rect.width, y: state.y * rect.height };
+
+        state.shards.forEach((item) => {
+          if (distance(shipPoint, item) < 30) {
+            state.score += 10;
+            scoreLabel.textContent = state.score;
+            item.el.remove();
+            state.shards = state.shards.filter((candidate) => candidate !== item);
+            spawnShard();
+          }
+        });
+
+        state.hazards.forEach((item) => {
+          if (distance(shipPoint, item) < 42) {
+            end("Pulse ring collision");
+          }
+        });
+      }
+
+      function spawnShard() {
+        const item = makeItem("shard");
+        state.shards.push(item);
+      }
+
+      function spawnHazard() {
+        const item = makeItem("hazard");
+        state.hazards.push(item);
+      }
+
+      function makeItem(className) {
+        const rect = game.getBoundingClientRect();
+        const el = document.createElement("div");
+        const x = random(0.08, 0.92) * rect.width;
+        const y = random(0.13, 0.88) * rect.height;
+        el.className = className;
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        game.appendChild(el);
+        return { el, x, y };
+      }
+
+      function clearItems() {
+        [...state.shards, ...state.hazards].forEach((item) => item.el.remove());
+        state.shards = [];
+        state.hazards = [];
+      }
+
+      function end(message) {
+        state.running = false;
+        clearItems();
+        intro.classList.remove("hide");
+        intro.querySelector("h1").textContent = message;
+        intro.querySelector("p").textContent = "Start another run, or use the LogiSchool controls around the iframe to keep browsing.";
+        startButton.textContent = "Play again";
+      }
+
+      function distance(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+      }
+
+      function random(min, max) {
+        return min + Math.random() * (max - min);
+      }
+    </script>
+  </body>
+</html>

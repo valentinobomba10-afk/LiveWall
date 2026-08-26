@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 
 enum WallpaperDownloadService {
     static func download(_ item: LibraryItem, progress: @escaping (Double) -> Void = { _ in }) async throws -> LibraryItem {
@@ -20,9 +21,19 @@ enum WallpaperDownloadService {
             let disposition = http.value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
             let sourceLooksLikeMP4 = source.lowercased().contains(".mp4")
             let responseNamesMP4 = disposition.contains(".mp4")
-            // Some hosts, including WallpaperWaves, correctly return an MP4
-            // but label it application/octet-stream.
-            guard type.hasPrefix("video/") || type.contains("mpegurl") || type.contains("mp4") || sourceLooksLikeMP4 || responseNamesMP4 else {
+            // Cloud hosts (Google Drive, Dropbox, Supabase Storage) serve video
+            // as octet-stream or via a redirect, so trust those hosts too.
+            let host = (url.host ?? "").lowercased()
+            let trustedHost = host.contains("google") || host.contains("dropbox")
+                || host.contains("supabase") || host.contains("googleusercontent")
+            // An HTML response means a login/scan page, not a video — a clear
+            // sign the file isn't shared publicly.
+            if type.contains("text/html") {
+                throw NSError(domain: "LiveWall", code: 13, userInfo: [NSLocalizedDescriptionKey:
+                    "That link returned a web page, not a video. Make sure the file is shared with “Anyone with the link.”"])
+            }
+            guard type.hasPrefix("video/") || type.contains("mpegurl") || type.contains("mp4")
+                    || sourceLooksLikeMP4 || responseNamesMP4 || trustedHost || type.contains("octet-stream") else {
                 throw NSError(domain: "LiveWall", code: 12, userInfo: [NSLocalizedDescriptionKey: "That URL is not a direct video file."])
             }
             FileManager.default.createFile(atPath: temporary.path, contents: nil)
@@ -50,6 +61,16 @@ enum WallpaperDownloadService {
             }
             try FileManager.default.moveItem(at: temporary, to: destination)
             progress(1)
+
+            // Cap background videos at 3 hours. A longer file is almost never a
+            // wallpaper and would sit huge on disk.
+            let asset = AVURLAsset(url: destination)
+            let seconds = CMTimeGetSeconds(asset.duration)
+            if seconds.isFinite, seconds > 3 * 3600 {
+                try? FileManager.default.removeItem(at: destination)
+                throw NSError(domain: "LiveWall", code: 14, userInfo: [NSLocalizedDescriptionKey:
+                    "That video is longer than 3 hours. Please use a shorter clip."])
+            }
         }
         let bookmark = try? destination.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
         return LibraryItem(title: item.title, kind: .localVideo, bookmark: bookmark, urlString: destination.absoluteString)

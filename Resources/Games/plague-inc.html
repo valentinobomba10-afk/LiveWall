@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <base href="https://cdn.jsdelivr.net/gh/Reeyuki/PlagueIncEvolved/">
+  <title>Plague Inc</title>
+
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: black;
+    }
+
+    #unity-canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+
+    #loader {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #0b0b0b;
+      color: white;
+      font-family: sans-serif;
+    }
+
+    #bar {
+      width: 60%;
+      height: 12px;
+      background: #333;
+    }
+
+    #fill {
+      height: 100%;
+      width: 0%;
+      background: #4caf50;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="loader">
+    <div id="text">0 MB / 300 MB</div>
+    <div id="bar">
+      <div id="fill"></div>
+    </div>
+  </div>
+
+  <canvas id="unity-canvas"></canvas>
+
+  <script>
+    const cdnBase = "https://cdn.jsdelivr.net/gh/Reeyuki/PlagueIncEvolved/"
+    const rawBase = "https://raw.githubusercontent.com/Reeyuki/PlagueIncEvolved/main/"
+    const buildBases = [cdnBase + "Build/", rawBase + "Build/"]
+
+    let loaded = 0
+    let totalGuess = 0
+
+    function update() {
+      const mb = (loaded / 1024 / 1024).toFixed(2)
+      const total = (totalGuess / 1024 / 1024).toFixed(2)
+      document.getElementById("text").textContent = mb + " MB / " + total + " MB"
+      document.getElementById("fill").style.width = (loaded / totalGuess * 100) + "%"
+    }
+
+    const decoder = new TextDecoder()
+
+    function isBadCdnBody(bytes) {
+      if (bytes.byteLength > 1024) return false
+      const text = decoder.decode(bytes.slice(0, Math.min(bytes.byteLength, 128)))
+      return text.startsWith("429:") || text.includes("Too Many Requests")
+    }
+
+    async function loadScriptWithFallback(fileName) {
+      let lastError
+      for (const baseUrl of buildBases) {
+        const script = document.createElement("script")
+        script.src = baseUrl + fileName
+        try {
+          await new Promise((resolve, reject) => {
+            script.onload = resolve
+            script.onerror = () => reject(new Error("Failed to load " + script.src))
+            document.head.appendChild(script)
+          })
+          return
+        } catch (error) {
+          lastError = error
+          script.remove()
+          console.warn("Loader failed, trying fallback:", script.src, error)
+        }
+      }
+      throw lastError || new Error("Unity loader could not be loaded")
+    }
+
+    async function fetchPart(fileName, expectedSize) {
+      let lastError
+      for (const baseUrl of buildBases) {
+        const url = baseUrl + fileName
+        try {
+          const res = await fetch(url, { cache: "no-store" })
+          if (!res.ok) throw new Error("HTTP " + res.status)
+          const bytes = new Uint8Array(await res.arrayBuffer())
+          if (isBadCdnBody(bytes)) throw new Error("CDN returned a rate-limit body")
+          if (expectedSize && bytes.byteLength !== expectedSize) {
+            throw new Error("Expected " + expectedSize + " bytes, got " + bytes.byteLength)
+          }
+          loaded += bytes.byteLength
+          update()
+          return bytes
+        } catch (error) {
+          lastError = error
+          console.warn("Part failed, trying fallback:", url, error)
+        }
+      }
+      throw lastError || new Error("Unable to load " + fileName)
+    }
+
+    /* CONFIG ONLY */
+    const files = [
+      {
+        name: "6b69ec426bff8a6bd4e760a1d5f507b9.wasm",
+        mime: "application/wasm",
+        sizes: [20971520, 9720656]
+      },
+      {
+        name: "3719aa6c33bf126ed64864ee5fc2fafc.data",
+        mime: "application/octet-stream",
+        sizes: [
+          20971520, 20971520, 20971520, 20971520, 20971520,
+          20971520, 20971520, 20971520, 20971520, 20971520,
+          20971520, 20971520, 20971520, 20971520, 6845232
+        ]
+      }
+    ]
+
+    function buildUrls(file) {
+      const urls = []
+      for (let i = 0; i < file.sizes.length; i++) {
+        urls.push(file.name + ".part" + String(i).padStart(2, "0"))
+      }
+      return urls
+    }
+
+    async function loadFile(file) {
+      const urls = buildUrls(file)
+      const size = file.sizes.reduce((sum, partSize) => sum + partSize, 0)
+      const out = new Uint8Array(size)
+      let off = 0
+
+      for (let i = 0; i < urls.length; i++) {
+        const bytes = await fetchPart(urls[i], file.sizes[i])
+        out.set(bytes, off)
+        off += bytes.byteLength
+      }
+
+      if (file.mime === "application/wasm") {
+        const hasWasmMagic = out[0] === 0x00 && out[1] === 0x61 && out[2] === 0x73 && out[3] === 0x6d
+        if (!hasWasmMagic) throw new Error("Merged wasm is invalid")
+      }
+
+      return out.buffer
+    }
+
+    async function start() {
+      try {
+        totalGuess = files.reduce((total, file) => total + file.sizes.reduce((sum, partSize) => sum + partSize, 0), 0)
+        update()
+        await loadScriptWithFallback("bb0d9ecdb05db3e84da20bd14a4f84dc.loader.js")
+
+        const wasmFile = files[0]
+        const dataFile = files[1]
+
+        let wasm = await loadFile(wasmFile)
+        let data = await loadFile(dataFile)
+
+        const wasmUrl = URL.createObjectURL(new Blob([wasm], { type: wasmFile.mime }))
+        const dataUrl = URL.createObjectURL(new Blob([data], { type: dataFile.mime }))
+        wasm = null
+        data = null
+
+        document.getElementById("text").textContent = "Starting game..."
+
+        createUnityInstance(document.querySelector("#unity-canvas"), {
+          dataUrl: dataUrl,
+          frameworkUrl: cdnBase + "Build/b4b58f3ff6d98fbfb83482e25e0e9a5c.framework.js",
+          codeUrl: wasmUrl,
+          streamingAssetsUrl: cdnBase + "StreamingAssets",
+          companyName: "Ndemic Creations",
+          productName: "Plague Inc",
+          productVersion: "1.18.3.2"
+        }, progress => {
+          document.getElementById("fill").style.width = (100 * progress) + "%"
+        }).then(unityInstance => {
+          window.unityInstance = unityInstance
+          window.gameInstance = unityInstance
+          URL.revokeObjectURL(wasmUrl)
+          URL.revokeObjectURL(dataUrl)
+          document.getElementById("loader").style.display = "none"
+        }).catch(error => {
+          document.getElementById("text").textContent = "Unity failed to start: " + error
+          console.error(error)
+        })
+      } catch (error) {
+        document.getElementById("text").textContent = "Load failed: " + error.message
+        console.error(error)
+      }
+    }
+
+    start()
+  </script>
+
+</body>
+
+</html>

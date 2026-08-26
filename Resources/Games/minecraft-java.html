@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Minecraft Web Client</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #050705;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #gameFrame {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #050705;
+    }
+
+    #loader {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      background: #050705;
+      color: #f4fff8;
+      transition: opacity 180ms ease, visibility 180ms ease;
+    }
+
+    #loader.hidden {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .panel {
+      display: grid;
+      gap: 18px;
+      justify-items: center;
+      width: min(360px, calc(100vw - 40px));
+      text-align: center;
+    }
+
+    .title {
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .spinner {
+      width: 46px;
+      height: 46px;
+      border: 5px solid rgba(255, 255, 255, 0.22);
+      border-top-color: #62d77a;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .status {
+      min-height: 20px;
+      color: rgba(244, 255, 248, 0.76);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: none;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      min-height: 42px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 6px;
+      background: #62d77a;
+      color: #061009;
+      font: 700 14px Arial, Helvetica, sans-serif;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: rgba(255, 255, 255, 0.16);
+      color: #fff;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    id="gameFrame"
+    title="Minecraft Web Client"
+    src="https://mcraft.fun/"
+    allow="autoplay; fullscreen; gamepad; pointer-lock; clipboard-read; clipboard-write"
+    allowfullscreen>
+  </iframe>
+
+  <div id="loader" aria-live="polite">
+    <div class="panel">
+      <div class="title">Minecraft Web Client</div>
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="status" class="status">Loading...</div>
+      <div id="actions" class="actions">
+        <button id="openGame" type="button">Open Game</button>
+        <button id="reloadGame" class="secondary" type="button">Reload</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var gameUrl = "https://mcraft.fun/";
+      var frame = document.getElementById("gameFrame");
+      var loader = document.getElementById("loader");
+      var status = document.getElementById("status");
+      var actions = document.getElementById("actions");
+      var openGame = document.getElementById("openGame");
+      var reloadGame = document.getElementById("reloadGame");
+
+      var fallbackTimer = window.setTimeout(function () {
+        status.textContent = "Still loading...";
+        actions.style.display = "flex";
+      }, 12000);
+
+      frame.addEventListener("load", function () {
+        window.clearTimeout(fallbackTimer);
+        window.setTimeout(function () {
+          loader.classList.add("hidden");
+          frame.focus();
+        }, 900);
+      });
+
+      frame.addEventListener("pointerdown", function () {
+        frame.focus();
+      });
+
+      openGame.addEventListener("click", function () {
+        window.location.href = gameUrl;
+      });
+
+      reloadGame.addEventListener("click", function () {
+        actions.style.display = "none";
+        status.textContent = "Loading...";
+        frame.src = gameUrl + "?reload=" + Date.now();
+      });
+    }());
+  </script>
+</body>
+</html>

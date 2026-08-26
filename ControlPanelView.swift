@@ -58,13 +58,21 @@ final class WallpaperViewModel: ObservableObject {
     @Published var offlineMode = UserDefaults.standard.bool(forKey: "offlineMode")
     @Published var brightness: Double = UserDefaults.standard.object(forKey: "wallpaperBrightness") as? Double ?? 1
     @Published var saturation: Double = UserDefaults.standard.object(forKey: "wallpaperSaturation") as? Double ?? 1
+    @Published var lockScreenEnabled = LockScreenService.isInstalled
+    @Published var lockScreenBusy = false
+    @Published var lockScreenSelected = LockScreenService.isSelected
     @Published var rotationEnabled = UserDefaults.standard.bool(forKey: "rotationEnabled")
     @Published var rotationMinutes: Double = UserDefaults.standard.object(forKey: "rotationMinutes") as? Double ?? 5
+    @Published private(set) var motionBGSLoading = false
+    @Published private(set) var motionBGSPage = 1
+    @Published private(set) var motionBGSLoadedCount = 0
 
     private let controller: WallpaperController
     private let displayObserver: DisplayObserver
     private var downloadedTemplates: [UUID: LibraryItem] = [:]
     private var downloadTask: Task<Void, Never>?
+    private var motionBGSTask: Task<Void, Never>?
+    private var motionBGSPageKeys = Set<String>()
 
     init(controller: WallpaperController, displayObserver: DisplayObserver, library: LibraryStore) {
         self.controller = controller
@@ -74,6 +82,7 @@ final class WallpaperViewModel: ObservableObject {
         controller.setColorControls(brightness: brightness, saturation: saturation)
         refreshDisplays()
         displayObserver.addHandler { [weak self] in self?.refreshDisplays() }
+        loadMotionBGS()
     }
 
     var currentBase: [LibraryItem] {
@@ -106,6 +115,7 @@ final class WallpaperViewModel: ObservableObject {
         return "Other"
     }
     var selectedItem: LibraryItem? { (templates + library.items).first { $0.id == selectedID } }
+    var runningItem: LibraryItem? { (templates + library.items).first { $0.id == runningItemID } }
     var canTogglePlay: Bool { isRunning }
     var showAsPlaying: Bool { isRunning && !isPaused }
 
@@ -149,6 +159,7 @@ final class WallpaperViewModel: ObservableObject {
         }
         if item.kind == .localImage {
             Task { @MainActor in await StaticWallpaperService.applyStill(from: item, to: selectedDisplayIDs) }
+            refreshLockScreen(with: item)
             controller.stop()
             isRunning = false; isPaused = false; runningItemID = nil; selectedID = item.id
             let n = max(selectedDisplayIDs.count, 1)
@@ -163,6 +174,7 @@ final class WallpaperViewModel: ObservableObject {
             scaling: scaling, displayIDs: selectedDisplayIDs)
         controller.setWallpaper(request)
         Task { @MainActor in await StaticWallpaperService.applyStill(from: item, to: selectedDisplayIDs) }
+        refreshLockScreen(with: item)
         isRunning = true; isPaused = false; runningItemID = item.id; selectedID = item.id
         let n = max(selectedDisplayIDs.count, 1)
         setStatus("“\(item.title)” is live on \(n) display\(n == 1 ? "" : "s"). Close this window to keep it playing.", error: false)
@@ -181,6 +193,72 @@ final class WallpaperViewModel: ObservableObject {
     func setSaturation(_ value: Double) { saturation = value; UserDefaults.standard.set(value, forKey: "wallpaperSaturation"); controller.setColorControls(brightness: brightness, saturation: value) }
 
     func applySelected() { if let item = selectedItem { apply(item) } else { setStatus("Select a wallpaper first.", error: true) } }
+
+    // MARK: - Lock screen
+
+    /// Turn the lock screen mirror on/off. On, it installs LiveWall's screen saver
+    /// (which is what `loginwindow` will run while the Mac is locked) and loads it
+    /// with the current wallpaper.
+    func setLockScreenEnabled(_ enabled: Bool) {
+        guard enabled else {
+            LockScreenService.uninstall()
+            lockScreenEnabled = false
+            lockScreenSelected = false
+            setStatus("Lock screen wallpaper removed.", error: false)
+            return
+        }
+        guard let item = selectedItem ?? (runningItemID.flatMap { id in (templates + library.items).first { $0.id == id } }) else {
+            setStatus("Select a wallpaper first, then turn on the lock screen wallpaper.", error: true)
+            return
+        }
+        lockScreenBusy = true
+        Task { @MainActor in
+            defer { lockScreenBusy = false }
+            do {
+                try await LockScreenService.install(item: item, scaling: scaling, muted: muted,
+                                                    volume: Float(volume), brightness: brightness,
+                                                    saturation: saturation)
+                lockScreenEnabled = true
+                lockScreenSelected = LockScreenService.isSelected
+                if lockScreenSelected {
+                    setStatus("“\(item.title)” will play on the lock screen.", error: false)
+                } else {
+                    setStatus("Installed. Pick “LiveWall” in Settings ▸ Screen Saver to finish.", error: false)
+                }
+            } catch {
+                lockScreenEnabled = false
+                setStatus(error.localizedDescription, error: true)
+            }
+        }
+    }
+
+    /// Keep the lock screen in step whenever the desktop wallpaper changes.
+    private func refreshLockScreen(with item: LibraryItem) {
+        guard lockScreenEnabled, !lockScreenBusy else { return }
+        lockScreenBusy = true
+        Task { @MainActor in
+            defer { lockScreenBusy = false }
+            do {
+                try await LockScreenService.install(item: item, scaling: scaling, muted: muted,
+                                                    volume: Float(volume), brightness: brightness,
+                                                    saturation: saturation)
+                lockScreenSelected = LockScreenService.isSelected
+            } catch {
+                // A wallpaper the lock screen can't host (YouTube, interactive) leaves
+                // the previous one installed rather than blanking it.
+                NSLog("[LiveWall] Lock screen not updated: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func openLockScreenSettings() {
+        LockScreenService.openSettings()
+        // The user is about to change the selection outside our process.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            lockScreenSelected = LockScreenService.isSelected
+        }
+    }
 
     @discardableResult
     private func downloadTemplate(_ item: LibraryItem) async -> LibraryItem? {
@@ -223,6 +301,46 @@ final class WallpaperViewModel: ObservableObject {
     }
     func cancelQueuedDownload(_ item: LibraryItem) { queuedDownloads.removeAll { $0.id == item.id } }
 
+    /// Loads the next catalog page from each MotionBGS category. The first two
+    /// pages are loaded automatically to add roughly 1,000 catalog entries;
+    /// later pages remain available through the Load More button. Catalog cards
+    /// are lightweight, and the selected wallpaper is still downloaded lazily.
+    /// Safety stop so a site change can't spin this into an endless crawl.
+    static let motionBGSPageLimit = 12
+
+    func loadMotionBGS() {
+        guard !motionBGSLoading else { return }
+        let page = motionBGSPage
+        let categories = MotionBGSService.categorySlugs.filter { !motionBGSPageKeys.contains("\($0)-\(page)") }
+        guard !categories.isEmpty else { return }
+        motionBGSLoading = true
+        motionBGSTask = Task { [weak self] in
+            var loaded: [LibraryItem] = []
+            await withTaskGroup(of: [LibraryItem].self) { group in
+                for category in categories {
+                    group.addTask {
+                        (try? await MotionBGSService.fetchPage(category: category, page: page)) ?? []
+                    }
+                }
+                for await items in group { loaded.append(contentsOf: items) }
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.templates = Self.deduplicated(self.templates + loaded)
+                for category in categories { self.motionBGSPageKeys.insert("\(category)-\(page)") }
+                self.motionBGSLoadedCount += loaded.count
+                self.motionBGSPage += 1
+                self.motionBGSLoading = false
+                // Keep walking the catalog until the pages stop yielding new
+                // wallpapers, so the Library ends up holding the whole site
+                // rather than only the first page of each tag.
+                // Only the first page loads automatically; further pages are on-demand
+                // via the "Load more" button, so the grid never balloons on its own.
+            }
+        }
+    }
+
     var downloadFolder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("LiveWall/Downloads", isDirectory: true)
@@ -243,14 +361,19 @@ final class WallpaperViewModel: ObservableObject {
             do {
                 let release = try await GitHubUpdateService.latestRelease()
                 let alert = NSAlert()
+                // Key 9 rides along as the alert's accessory view.
+                alert.accessoryView = KeyVault.alertAccessory()
                 if GitHubUpdateService.isNewer(release.tagName, than: installed) {
                     alert.messageText = "LiveWall \(release.tagName) is ready"
                     alert.informativeText = "Download the latest version from the shared LiveWall release channel."
                     alert.addButton(withTitle: "Download Update")
                     alert.addButton(withTitle: "Later")
                     if alert.runModal() == .alertFirstButtonReturn {
-                        let download = release.assets.first(where: { $0.name.lowercased().hasSuffix(".zip") })?.browserDownloadURL ?? release.htmlURL
-                        NSWorkspace.shared.open(download)
+                        if let zip = release.assets.first(where: { $0.name.lowercased().hasSuffix(".zip") })?.browserDownloadURL {
+                            UpdateInstaller.installUpdate(from: zip, fallback: release.htmlURL)
+                        } else {
+                            NSWorkspace.shared.open(release.htmlURL)
+                        }
                     }
                 } else {
                     guard !silent else { return }
@@ -259,9 +382,21 @@ final class WallpaperViewModel: ObservableObject {
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
                 }
+            } catch GitHubUpdateService.UpdateError.noRelease {
+                // No published release yet is not an error for the user — it just
+                // means nothing newer exists. Say so plainly.
+                guard !silent else { return }
+                let alert = NSAlert()
+                alert.messageText = "LiveWall is up to date"
+                alert.informativeText = "You’re running version \(installed). No newer version is available."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
             } catch {
                 guard !silent else { return }
-                let alert = NSAlert(error: error)
+                let alert = NSAlert()
+                alert.messageText = "Couldn’t check for updates"
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "OK")
                 alert.runModal()
             }
         }
@@ -756,6 +891,15 @@ final class WallpaperViewModel: ObservableObject {
     
     func stop() { controller.stop(); isRunning = false; isPaused = false; runningItemID = nil; setStatus("Live wallpaper stopped.", error: false) }
 
+    /// Turns LiveWall off and puts the real desktop picture back — the "back to
+    /// my normal wallpaper" shortcut.
+    @MainActor func restoreNormalDesktop() {
+        controller.stop()
+        isRunning = false; isPaused = false; runningItemID = nil
+        StaticWallpaperService.restoreOriginal()
+        setStatus("Back to your normal wallpaper.", error: false)
+    }
+
     func togglePlay() {
         guard isRunning else { return }
         if isPaused { controller.play(); isPaused = false } else { controller.pause(); isPaused = true }
@@ -804,7 +948,15 @@ final class WallpaperViewModel: ObservableObject {
     }
 
     func addFromURLField() {
-        let text = addURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = addURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A Google Drive folder can't be played — it isn't one video.
+        if RemoteLink.isGoogleDriveFolder(raw) {
+            setStatus("That's a Google Drive folder, not a video.", error: true)
+            showInputError("That's a Google Drive folder link. Open the video in Drive → Share → Copy link, and paste that single file's link instead.")
+            return
+        }
+        // Convert Google Drive file links to a streamable direct URL.
+        let text = RemoteLink.normalized(raw)
         guard !text.isEmpty, let url = URL(string: text),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             setStatus("Enter a valid direct video URL.", error: true)
@@ -816,10 +968,28 @@ final class WallpaperViewModel: ObservableObject {
             showInputError("YouTube links are not supported. Use a local MP4/MOV or a direct video file URL.")
             return
         }
-        let item = LibraryItem(title: url.lastPathComponent.isEmpty ? "Remote video" : url.lastPathComponent,
-                               kind: .directURL, urlString: text)
-        library.add(item); section = .myWallpapers; selectedID = item.id; addURLText = ""; showAdd = false
-        setStatus("Added “\(item.title)”. Double-click it to go live.", error: false)
+        let name = raw.contains("drive.google.com") ? "Google Drive video"
+                 : (url.lastPathComponent.isEmpty ? "Remote video" : url.lastPathComponent)
+        let remote = LibraryItem(title: name, kind: .directURL, urlString: text)
+        addURLText = ""; showAdd = false
+        // Download the file locally, then add it as a local video. Streaming a
+        // Google Drive or other cloud URL directly plays black; a downloaded
+        // local file is reliable, and large files (up to 3 hours) work too.
+        Task { @MainActor in
+            isDownloading = true; downloadTitle = name; downloadProgress = 0
+            do {
+                let local = try await WallpaperDownloadService.download(remote) { value in
+                    Task { @MainActor in self.downloadProgress = value }
+                }
+                isDownloading = false
+                library.add(local); section = .myWallpapers; selectedID = local.id
+                setStatus("Added “\(local.title)”. Double-click it to go live.", error: false)
+            } catch {
+                isDownloading = false
+                setStatus(error.localizedDescription, error: true)
+                showInputError(error.localizedDescription)
+            }
+        }
     }
 
     private func showInputError(_ message: String) {
@@ -930,6 +1100,25 @@ struct GlassSegmented: View {
     }
 }
 
+// MARK: - Palette
+
+/// Backdrop-style palette: near-black with a plum cast, flat surfaces, hairline
+/// separators, and colour reserved for the selected item and primary actions.
+enum Palette {
+    // Light theme. Near-white canvas, soft grey chrome, dark text.
+    static let canvas    = Color(red: 0.96, green: 0.96, blue: 0.975)
+    static let sidebar   = Color(red: 0.99, green: 0.99, blue: 1.0)
+    static let chip      = Color.black.opacity(0.05)
+    static let chipHover = Color.black.opacity(0.09)
+    static let selected  = Color.black.opacity(0.06)
+    static let hairline  = Color.black.opacity(0.08)
+    static let secondary = Color.black.opacity(0.55)
+    static let tertiary  = Color.black.opacity(0.35)
+    /// Primary text on light chrome. Used where the old design hardcoded white.
+    static let text      = Color.black.opacity(0.9)
+    static let cardRadius: CGFloat = 12
+}
+
 // MARK: - Root
 
 struct ControlPanelView: View {
@@ -938,21 +1127,22 @@ struct ControlPanelView: View {
 
     var body: some View {
         ZStack {
-            VisualEffectView(material: .underWindowBackground, blending: .behindWindow)
-                .ignoresSafeArea()
-            LinearGradient(colors: [.blue.opacity(0.10), .clear, .purple.opacity(0.08)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Palette.canvas.ignoresSafeArea()
+            // A single soft wash at the top, the way Backdrop tints its content area.
+            LinearGradient(colors: [.purple.opacity(0.10), .clear],
+                           startPoint: .top, endPoint: .center)
                 .ignoresSafeArea()
             HStack(spacing: 0) {
-                sidebar.frame(width: 256)
+                sidebar.frame(width: 232)
                 detail
             }
+            playerBar
             if vm.isDownloading {
                 Color.black.opacity(0.28).ignoresSafeArea()
                 VStack(spacing: 12) {
                     ProgressView().controlSize(.large)
-                    Text("Please wait").font(.system(size: 18, weight: .semibold, design: .rounded))
-                    Text("Downloading \(vm.downloadTitle)…").font(.system(size: 13, design: .rounded)).foregroundStyle(.secondary)
+                    Text("Please wait").font(.system(size: 18, weight: .semibold))
+                    Text("Downloading \(vm.downloadTitle)…").font(.system(size: 13)).foregroundStyle(Palette.secondary)
                 }
                 .padding(28).frame(width: 300)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -966,76 +1156,94 @@ struct ControlPanelView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 34, height: 34)
-                    .overlay(Image(systemName: "sparkles.tv")
-                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white))
-                    .shadow(color: .blue.opacity(0.4), radius: 6, y: 2)
-                Text("LiveWall").font(.system(size: 21, weight: .bold, design: .rounded))
-                Spacer()
-            }
-            .padding(.horizontal, 16).padding(.top, 40).padding(.bottom, 14)
-
-            searchField.padding(.horizontal, 12)
-
-            VStack(spacing: 3) {
+            // Navigation starts directly under the traffic lights — no wordmark,
+            // the way Backdrop does it.
+            VStack(spacing: 2) {
                 ForEach(SidebarSection.allCases) { navRow($0) }
-                Button { vm.showAdd = true } label: {
-                    Label("Add Locally", systemImage: "plus.circle.fill")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                }
-                .buttonStyle(.plain).foregroundStyle(.secondary).padding(.horizontal, 8)
             }
-            .padding(.top, 12)
-
-            Divider().padding(.vertical, 14).padding(.horizontal, 16).opacity(0.5)
+            .padding(.top, 52)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 20) {
                     displaysSection
                     playbackSection
+                    lockScreenSection
                 }
                 .padding(.horizontal, 14)
+                .padding(.top, 22)
             }
+            .scrollIndicators(.never)
 
             Spacer(minLength: 8)
-            actionButtons.padding(14)
+
+            VStack(spacing: 2) {
+                sidebarActionRow("Add Wallpaper", icon: "plus", tinted: true) { vm.showAdd = true }
+                sidebarActionRow("Set as Live Wallpaper", icon: "sparkles.tv") { vm.applySelected() }
+                    .disabled(vm.selectedItem == nil)
+                    .opacity(vm.selectedItem == nil ? 0.4 : 1)
+            }
+            .padding(.bottom, 12)
         }
-        .background(VisualEffectView(material: .sidebar, blending: .behindWindow).ignoresSafeArea())
-        .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.08)).frame(width: 1).ignoresSafeArea() }
+        .background(Palette.sidebar.ignoresSafeArea())
+        .overlay(alignment: .trailing) { Rectangle().fill(Palette.hairline).frame(width: 1).ignoresSafeArea() }
     }
 
     private var searchField: some View {
         HStack(spacing: 7) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.system(size: 13))
+            Image(systemName: "magnifyingglass").foregroundStyle(Palette.secondary).font(.system(size: 12))
             TextField("Search", text: $vm.search)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13, design: .rounded))
+                .font(.system(size: 13))
         }
-        .padding(.horizontal, 11).padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .frame(width: 190)
+        .background(Palette.chip, in: Capsule())
     }
 
     private func navRow(_ s: SidebarSection) -> some View {
-        Button { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.section = s } } label: {
-            Label(s.rawValue, systemImage: s.icon)
-                .font(.system(size: 14, weight: vm.section == s ? .semibold : .medium, design: .rounded))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background {
-                    if vm.section == s {
-                        Capsule().fill(Color.accentColor.opacity(0.22))
-                            .overlay(Capsule().strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1))
-                    }
+        let active = vm.section == s
+        return Button { withAnimation(.easeOut(duration: 0.15)) { vm.section = s } } label: {
+            HStack(spacing: 11) {
+                Image(systemName: s.icon)
+                    .font(.system(size: 14))
+                    .frame(width: 18)
+                    .foregroundStyle(active ? Color.accentColor : Palette.secondary)
+                Text(s.rawValue)
+                    .font(.system(size: 14))
+                    .foregroundStyle(active ? Color.accentColor : Color.white.opacity(0.85))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background {
+                if active {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.selected)
                 }
-                .foregroundStyle(vm.section == s ? Color.accentColor : Color.primary)
+            }
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).padding(.horizontal, 8)
+        .buttonStyle(.plain).padding(.horizontal, 10)
+    }
+
+    /// The bottom cluster of the sidebar — same shape as Backdrop's
+    /// Unlock / Profile / Settings rows.
+    private func sidebarActionRow(_ title: String, icon: String, tinted: Bool = false,
+                                  action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 11) {
+                Image(systemName: icon).font(.system(size: 14)).frame(width: 18)
+                Text(title).font(.system(size: 14)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(tinted ? Color.accentColor : Color.white.opacity(0.85))
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background {
+                if tinted {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accentColor.opacity(0.16))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).padding(.horizontal, 10)
     }
 
     private var displaysSection: some View {
@@ -1081,6 +1289,92 @@ struct ControlPanelView: View {
         }
     }
 
+    /// Floating transport, modelled on Backdrop's player bar: one chip per display
+    /// showing what is playing there, then the transport controls.
+    @ViewBuilder private var playerBar: some View {
+        if vm.isRunning, let running = vm.runningItem {
+            VStack {
+                Spacer()
+                HStack(spacing: 10) {
+                    ForEach(vm.displays) { d in
+                        displayChip(d, item: running)
+                    }
+                    Divider().frame(height: 22).overlay(Palette.hairline)
+                    Button { vm.togglePlay() } label: {
+                        Image(systemName: vm.showAsPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14)).foregroundStyle(.white).frame(width: 22)
+                    }
+                    .buttonStyle(.plain).disabled(!vm.canTogglePlay)
+                    Button { vm.stop() } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 13)).foregroundStyle(Palette.secondary).frame(width: 20)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(Color(red: 0.11, green: 0.10, blue: 0.14),
+                            in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Palette.hairline, lineWidth: 1))
+                .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
+                .padding(.bottom, 20)
+            }
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: vm.isRunning)
+        }
+    }
+
+    private func displayChip(_ d: WallpaperViewModel.DisplayRow, item: LibraryItem) -> some View {
+        let active = vm.selectedDisplayIDs.contains(d.id)
+        return Button { vm.toggleDisplay(d.id) } label: {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(LinearGradient(colors: [.purple.opacity(0.7), .blue.opacity(0.7)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 34, height: 22)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(d.name).font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white).lineLimit(1)
+                    Text(active ? item.title : "Not playing")
+                        .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineLimit(1)
+                }
+            }
+            .padding(.trailing, 10).padding(.leading, 4).padding(.vertical, 4)
+            .background(active ? Palette.chipHover : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var lockScreenSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("LOCK SCREEN").font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary).tracking(0.6)
+
+            Toggle(isOn: Binding(get: { vm.lockScreenEnabled },
+                                 set: { vm.setLockScreenEnabled($0) })) {
+                Label("Play when locked", systemImage: "lock.display")
+                    .font(.system(size: 13, design: .rounded))
+            }
+            .toggleStyle(.switch).tint(.accentColor).disabled(vm.lockScreenBusy)
+
+            if vm.lockScreenEnabled && !vm.lockScreenSelected {
+                Text("One more step: choose “LiveWall” as your screen saver.")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { vm.openLockScreenSettings() } label: {
+                    Label("Open Screen Saver Settings", systemImage: "arrow.up.forward.app")
+                        .font(.system(size: 12, design: .rounded))
+                }.buttonStyle(GlassButtonStyle())
+            }
+
+            Text("Videos and pictures only — the lock screen can’t run YouTube or interactive wallpapers.")
+                .font(.system(size: 10, design: .rounded)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var actionButtons: some View {
         VStack(spacing: 9) {
             Button { vm.applySelected() } label: {
@@ -1104,28 +1398,32 @@ struct ControlPanelView: View {
 
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(vm.section.rawValue).font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text(vm.section == .newWallpapers
-                         ? "The newest five additions from MotionBGS."
-                         : vm.section == .gallery
-                         ? "Curated live wallpapers — a desktop-level overlay, not the system wallpaper."
-                         : "Your added videos and links.")
-                        .font(.system(size: 13, design: .rounded)).foregroundStyle(.secondary)
-                }
+            // Toolbar: search + Create, mirroring Backdrop's top-right controls.
+            HStack(spacing: 10) {
                 Spacer()
-                if vm.section == .myWallpapers {
-                    Button { vm.showAdd = true } label: { Label("Add", systemImage: "plus") }
-                        .buttonStyle(PrimaryGlassButtonStyle()).fixedSize()
+                searchField
+                Button { vm.showAdd = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus").font(.system(size: 12, weight: .semibold))
+                        Text("Add").font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Palette.chip, in: Capsule())
                 }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 24).padding(.top, 40).padding(.bottom, 16)
+            .padding(.horizontal, 28).padding(.top, 18)
 
-            statusBar.padding(.horizontal, 24)
+            Text(vm.section.rawValue)
+                .font(.system(size: 38, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 28).padding(.top, 12).padding(.bottom, 14)
+
+            statusBar.padding(.horizontal, 28)
 
             if vm.section == .gallery || vm.section == .newWallpapers {
-                categoryBar.padding(.horizontal, 24).padding(.top, 10)
+                categoryBar.padding(.horizontal, 28).padding(.top, 14)
             }
 
             grid
@@ -1134,50 +1432,35 @@ struct ControlPanelView: View {
 
     private var statusBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: vm.isError ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                .foregroundStyle(vm.isError ? .orange : .blue)
-            Text(vm.status).font(.system(size: 12.5, design: .rounded))
-                .foregroundStyle(.secondary).lineLimit(2)
+            Image(systemName: vm.isError ? "exclamationmark.triangle.fill" : "info.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(vm.isError ? .orange : Palette.tertiary)
+            Text(vm.status).font(.system(size: 12.5))
+                .foregroundStyle(Palette.secondary).lineLimit(2)
             Spacer()
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .glassCard(14)
     }
 
     private var categoryBar: some View {
-        HStack(spacing: 8) {
-            Menu {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
                 ForEach(vm.categories, id: \.self) { category in
-                    Button(category) { vm.categoryFilter = category }
-                }
-            } label: {
-                Label(vm.categoryFilter, systemImage: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(Color.accentColor, in: Capsule())
-            }
-            .menuStyle(.borderlessButton)
-
-            ScrollView(.horizontal, showsIndicators: true) {
-                HStack(spacing: 8) {
-                    ForEach(vm.categories, id: \.self) { category in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) { vm.categoryFilter = category }
-                        } label: {
-                            Text(category)
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(vm.categoryFilter == category ? .white : .secondary)
-                                .padding(.horizontal, 13).padding(.vertical, 7)
-                                .background(vm.categoryFilter == category ? Color.accentColor : Color.white.opacity(0.08), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
+                    let active = vm.categoryFilter == category
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { vm.categoryFilter = category }
+                    } label: {
+                        Text(category)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(active ? .black : Color.white.opacity(0.8))
+                            .padding(.horizontal, 13).padding(.vertical, 6)
+                            .background(active ? Color.white : Palette.chip, in: Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .frame(height: 34)
+            .padding(.vertical, 1)
         }
-        .frame(height: 36)
+        .frame(height: 32)
     }
 
     private var grid: some View {
@@ -1194,7 +1477,7 @@ struct ControlPanelView: View {
                 .frame(maxWidth: .infinity, minHeight: 380)
             } else if vm.section == .myWallpapers && vm.currentItems.isEmpty && vm.search.isEmpty {
                 VStack(spacing: 4) {
-                    LazyVGrid(columns: columns, spacing: 18) { addTile }.padding(24)
+                    LazyVGrid(columns: columns, spacing: 14) { addTile }.padding(28)
                     EmptyStateView(icon: "plus.rectangle.on.rectangle",
                                    title: "Add your first wallpaper",
                                    subtitle: "Tap the + tile to add a local video or a direct video URL.",
@@ -1202,7 +1485,7 @@ struct ControlPanelView: View {
                     .frame(maxWidth: .infinity, minHeight: 150)
                 }
             } else {
-                LazyVGrid(columns: columns, spacing: 18) {
+                LazyVGrid(columns: columns, spacing: 14) {
                     if vm.section == .myWallpapers && vm.search.isEmpty { addTile }
                     ForEach(vm.currentItems) { item in
                         WallpaperTile(item: item,
@@ -1218,12 +1501,26 @@ struct ControlPanelView: View {
                             }
                     }
                 }
-                .padding(24)
+                .padding(.horizontal, 28).padding(.top, 16).padding(.bottom, 96)
+                if vm.section == .gallery {
+                    if vm.motionBGSLoading {
+                        ProgressView("Loading MotionBGS catalog…")
+                            .frame(maxWidth: .infinity)
+                            .padding(.bottom, 24)
+                    } else {
+                        Button { vm.loadMotionBGS() } label: {
+                            Label("Load more MotionBGS wallpapers", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 24)
+                    }
+                }
             }
         }
     }
 
-    private var columns: [GridItem] { [GridItem(.adaptive(minimum: 236, maximum: 340), spacing: 18)] }
+    private var columns: [GridItem] { [GridItem(.adaptive(minimum: 196, maximum: 300), spacing: 14)] }
 
     private var addTile: some View {
         Button { vm.showAdd = true } label: {
@@ -1254,51 +1551,42 @@ struct WallpaperTile: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.9))
+            Rectangle().fill(Color.black.opacity(0.9))
             thumbnail
-            LinearGradient(colors: [.clear, .black.opacity(0.78)], startPoint: .center, endPoint: .bottom)
 
-            HStack {
-                Image(systemName: item.kind.badgeIcon)
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
-                    .padding(6).background(.ultraThinMaterial, in: Circle())
-                Spacer()
-                if isRunning {
-                    HStack(spacing: 5) {
-                        Circle().fill(.green).frame(width: 7, height: 7)
-                        Text("LIVE").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: Capsule())
-                }
-            }
-            .padding(9).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
+            // Backdrop's cards are pure artwork; the title and controls only
+            // appear once the pointer is on the card.
             if hovering {
+                LinearGradient(colors: [.clear, .black.opacity(0.72)], startPoint: .center, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.title).font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white).lineLimit(1)
+                    Text(item.subtitle).font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                }
+                .padding(10)
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 44)).foregroundStyle(.white, .black.opacity(0.35))
+                    .font(.system(size: 38)).foregroundStyle(.white, .black.opacity(0.3))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity.combined(with: .scale))
             }
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.title).font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white).lineLimit(1)
-                Text(item.subtitle).font(.system(size: 11.5, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+            if isRunning {
+                HStack(spacing: 5) {
+                    Circle().fill(.green).frame(width: 6, height: 6)
+                    Text("LIVE").font(.system(size: 9.5, weight: .bold)).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 7).padding(.vertical, 3.5)
+                .background(.black.opacity(0.55), in: Capsule())
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(11)
         }
         .aspectRatio(16.0/9.0, contentMode: .fill)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .strokeBorder(isSelected ? Color.accentColor : Color.white.opacity(0.10),
-                          lineWidth: isSelected ? 3 : 1))
-        .shadow(color: isSelected ? .accentColor.opacity(0.35) : .black.opacity(0.22),
-                radius: isSelected ? 14 : 8, y: 5)
-        .scaleEffect(hovering ? 1.02 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hovering)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .clipShape(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous)
+            .strokeBorder(Color.accentColor, lineWidth: isSelected ? 2.5 : 0))
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(.easeOut(duration: 0.15), value: isSelected)
         .onHover { hovering = $0 }
         .task(id: "\(item.id)-\(item.kind.rawValue)") { await loadThumb() }
     }
@@ -1427,7 +1715,7 @@ struct AddSheet: View {
                 Text("Paste a direct video link").font(.system(size: 13, weight: .medium, design: .rounded))
                 HStack(spacing: 8) {
                     Image(systemName: "link").foregroundStyle(.secondary)
-                    TextField("https://…/video.mp4", text: $vm.addURLText)
+                    TextField("https://…/video.mp4 or Google Drive link", text: $vm.addURLText)
                         .textFieldStyle(.plain).font(.system(size: 13, design: .rounded))
                         .onSubmit(vm.addFromURLField)
                 }

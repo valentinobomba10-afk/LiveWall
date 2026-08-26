@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <base href="https://cdn.jsdelivr.net/gh/genizy/cg-rip@main/buildnow-gg/">
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  </head>
+  <body style="margin:0;padding:0" class="noselect">
+    <div id="loading-text" style="color: black; font-size: 48px; font-family: cursive; text-align: center; margin-top: 20px;">LOADING...</div>
+    <canvas id="unity-canvas"
+      style="position:fixed;top:0;left:0;width:100%;height:100%;outline:none"></canvas>
+
+    <script>
+    const SPLIT_MAP = {
+      "7db022abd161455e3cc5f207e75d294b.wasm": "application/wasm",
+      "ab8dd356a41a2943639294657a0990f8.data": "application/octet-stream"
+    };
+    const FALLBACK_BASE = "https://raw.githubusercontent.com/genizy/cg-rip/main/buildnow-gg/";
+    </script>
+
+    <script>
+    const decoder = new TextDecoder();
+
+    function primaryUrl(path) {
+      return new URL(path, document.baseURI).href;
+    }
+
+    function fallbackUrl(path) {
+      return new URL(path, FALLBACK_BASE).href;
+    }
+
+    async function urlExists(url) {
+      try {
+        const head = await fetch(url, { method: "HEAD", cache: "no-store" });
+        return head.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    async function partExists(partPath) {
+      return (await urlExists(primaryUrl(partPath))) || (await urlExists(fallbackUrl(partPath)));
+    }
+
+    function isBadCdnBody(bytes) {
+      if (bytes.byteLength > 1024) return false;
+      const text = decoder.decode(bytes.slice(0, Math.min(bytes.byteLength, 128)));
+      return text.startsWith("429:") || text.includes("Too Many Requests");
+    }
+
+    async function fetchPart(partPath) {
+      let lastError;
+      for (const url of [primaryUrl(partPath), fallbackUrl(partPath)]) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          if (isBadCdnBody(bytes)) throw new Error("CDN returned a rate-limit body");
+          return bytes;
+        } catch (error) {
+          lastError = error;
+          console.warn("Part fetch failed, trying fallback:", url, error);
+        }
+      }
+      throw new Error("Failed part " + partPath + ": " + (lastError ? lastError.message : "unknown error"));
+    }
+
+    function validateMergedFile(basePath, bytes) {
+      if (!basePath.endsWith(".wasm")) return;
+      const hasWasmMagic = bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+      if (!hasWasmMagic) {
+        throw new Error("Merged wasm is invalid. The first bytes are " + Array.from(bytes.slice(0, 4)).join(", "));
+      }
+    }
+
+    async function mergeParts(basePath, mimeType) {
+      const parts = [];
+      for (let i = 1; i <= 99; i++) {
+        const partPath = basePath + ".part" + i;
+        if (!(await partExists(partPath))) break;
+        parts.push(partPath);
+      }
+      if (parts.length === 0) return primaryUrl(basePath);
+
+      const buffers = await Promise.all(parts.map(fetchPart));
+
+      const total = buffers.reduce((a, b) => a + b.length, 0);
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const b of buffers) { merged.set(b, offset); offset += b.length; }
+      validateMergedFile(basePath, merged);
+
+      return URL.createObjectURL(new Blob([merged], { type: mimeType || "application/octet-stream" }));
+    }
+
+    async function preMergeAll() {
+      const map = {};
+      const files = Object.entries(SPLIT_MAP);
+      const total = files.length;
+      let done = 0;
+
+      const loadingText = document.getElementById("loading-text");
+
+      for (const [file, mimeType] of files) {
+        const merged = await mergeParts("Build/" + file, mimeType);
+        map[file] = merged;
+        done++;
+        const percent = Math.floor((done / total) * 100);
+        loadingText.innerText = `LOADING... ${percent}%`;
+        console.log("Premerged:", file, "->", merged);
+      }
+
+      loadingText.style.display = "none";
+
+      return map;
+    }
+
+    (async () => {
+      const mergedMap = await preMergeAll();
+      window.SPLIT_MAP = mergedMap;
+      const origFetch = window.fetch;
+      window.fetch = async function(resource, options) {
+        if (typeof resource === "string") {
+          const key = resource.split("/").pop();
+          if (mergedMap[key]) {
+            console.log("Redirect fetch:", key);
+            return origFetch(mergedMap[key], options);
+          }
+          if (resource.includes("StreamingAssets")) {
+            return origFetch((document.querySelector('base').href !== null ? document.querySelector('base').href+"/" : "") + "StreamingAssets/"+resource.split("/StreamingAssets/")[1])
+          }
+        }
+        return origFetch(resource, options);
+      };
+
+      const OrigXHR = window.XMLHttpRequest;
+      window.XMLHttpRequest = function() {
+        const xhr = new OrigXHR();
+        const origOpen = xhr.open;
+        xhr.open = function(method, url, ...rest) {
+          const key = url.split("/").pop();
+          if (mergedMap[key]) {
+            console.log("Redirect XHR:", key);
+            origOpen.call(xhr, method, mergedMap[key], ...rest);
+          } else {
+            origOpen.call(xhr, method, url, ...rest);
+          }
+        };
+        return xhr;
+      };
+
+      const canvas = document.querySelector("#unity-canvas");
+      const loaderUrl = "Build/7a2dbded24d57e056180125b1583e7c4.loader.js";
+      const config = {
+        dataUrl: "Build/ab8dd356a41a2943639294657a0990f8.data",
+        frameworkUrl: "Build/91a2bfcec140bc524100478b99a4f6d7.framework.js",
+        codeUrl: "Build/7db022abd161455e3cc5f207e75d294b.wasm",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "BuildNow GG",
+        productName: "BuildNow GG",
+        productVersion: "1.0.0"
+      };
+
+      const script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {}).then((unityInstance) => {
+          window.gameInstance = unityInstance;
+        }).catch((message) => alert(message));
+      };
+      document.body.appendChild(script);
+    })();
+    </script>
+
+    <script>
+    function resizeCanvas() {
+      const canvas = document.getElementById("unity-canvas");
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      canvas.style.width = window.innerWidth + "px";
+      canvas.style.height = window.innerHeight + "px";
+    }
+    window.addEventListener("load", resizeCanvas);
+    window.addEventListener("resize", resizeCanvas);
+    </script>
+  </body>
+</html>
