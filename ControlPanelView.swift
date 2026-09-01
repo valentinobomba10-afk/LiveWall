@@ -77,7 +77,7 @@ final class WallpaperViewModel: ObservableObject {
     init(controller: WallpaperController, displayObserver: DisplayObserver, library: LibraryStore) {
         self.controller = controller
         self.displayObserver = displayObserver
-        self.templates = Self.deduplicated(Self.interactiveTemplates + Self.builtInTemplates + Self.additionalTemplates + Self.additionalTemplates2 + Self.wallpaperWavesTemplates)
+        self.templates = Self.deduplicated(Self.interactiveTemplates + Self.skateTemplates + Self.builtInTemplates + Self.additionalTemplates + Self.additionalTemplates2 + Self.wallpaperWavesTemplates)
         self.library = library
         controller.setColorControls(brightness: brightness, saturation: saturation)
         refreshDisplays()
@@ -387,6 +387,9 @@ final class WallpaperViewModel: ObservableObject {
                 // means nothing newer exists. Say so plainly.
                 guard !silent else { return }
                 let alert = NSAlert()
+                // Key 9 rides along here too, so it's reachable even when there's
+                // no published release yet.
+                alert.accessoryView = KeyVault.alertAccessory()
                 alert.messageText = "LiveWall is up to date"
                 alert.informativeText = "You’re running version \(installed). No newer version is available."
                 alert.addButton(withTitle: "OK")
@@ -438,6 +441,57 @@ final class WallpaperViewModel: ObservableObject {
         }
         return items
     }
+
+    /// Verified landscape videos from DesktopHut's Skate search collection.
+    /// The small JPEG posters keep the grid quick; MP4 files download only
+    /// after the user chooses a wallpaper.
+    private static let skateTemplates: [LibraryItem] = [
+        LibraryItem(title: "DesktopHut · Skateboarder Grinding in the Park", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655541694-1655541694-free-stock-video-young-skateboarder-grinding-in-the-park-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655541694_398833.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skateboarder on Park Ramps", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655541693-1655541693-free-stock-video-young-skateboarder-playing-on-the-ramps-of-a-park-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655541693_353388.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skateboarder Practicing on a Ramp", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655541693-1655541693-free-stock-video-young-skateboarder-practicing-on-the-ramp-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655541693_421914.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skateboarder Resting at the Park", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655541691-1655541691-free-stock-video-young-skateboarder-sitting-placing-his-skateboard-aside-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655541691_369810.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Smiling Skateboarder", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655541691-1655541691-free-stock-video-young-skateboarder-smiling-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655541691_953937.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Urban Roller Skater Spin", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655541049-1655541049-free-stock-video-urban-boy-with-roller-skates-sliding-and-spinning-in-a-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655541049_861076.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skateboard POV Ride", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655488338-1655488338-free-video-stock-top-pov-of-a-boy-riding-skateboard-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655488338_518942.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Aerial Half-Pipe Skater", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655488281-1655488281-free-video-stock-top-aerial-shot-of-a-skater-skating-on-a-half-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655488281_772553.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skateboarder on the Open Road", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655487263-1655487263-free-video-stock-teen-woman-on-a-skateboard-on-the-road-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655487263_331572.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Urban Graffiti Skate Session", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655475428-1655475428-free-video-stock-skateboarders-in-an-urban-area-with-graffiti-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655475428_665239.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skater Selfie", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655474028-1655474028-free-video-stock-smiling-skater-takes-selfie-for-social-media-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655474028_533227.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skateboarder Portrait", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655473581-1655473581-free-video-stock-skater-with-his-skateboard-portrait-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655473581_263588.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skater With His Board", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655473580-1655473580-free-video-stock-skater-with-his-board-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655473580_19215.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skater Texting in the City", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655473578-1655473578-free-video-stock-skater-texting-and-looking-at-the-camera-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655473578_818085.jpg", category: "Skate"),
+        LibraryItem(title: "DesktopHut · Skater Slips Off His Board", kind: .directURL,
+                    urlString: "https://www.desktophut.com/files/1655473577-1655473577-free-video-stock-skater-slips-off-his-board-live-wallpaper.mp4",
+                    thumbnailURLString: "https://www.desktophut.com/images/thumb_1655473577_631888.jpg", category: "Skate")
+    ]
 
     private static let builtInTemplates: [LibraryItem] = [
         LibraryItem(title: "MotionBGS · Sunset of the Seven Suns - Deltarune", kind: .directURL, urlString: "https://motionbgs.com/dl/4k/9893"),

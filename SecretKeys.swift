@@ -101,16 +101,25 @@ struct SecretKeyView: View {
     @ObservedObject private var vault = KeyVault.shared
     @State private var hovering = false
     @State private var vanishing = false
+    @State private var pulse = false
 
     var body: some View {
         if !vault.has(id) {
             Text("🔑")
                 .font(.system(size: size))
-                .opacity(vanishing ? 0 : (hovering ? 1 : 0.62))
-                .scaleEffect(vanishing ? 1.9 : (hovering ? 1.18 : 1))
+                // Brighter at rest (0.85) and a slow glow pulse so the keys
+                // actually catch the eye instead of blending into the artwork.
+                .opacity(vanishing ? 0 : (hovering ? 1 : (pulse ? 0.95 : 0.72)))
+                .scaleEffect(vanishing ? 1.9 : (hovering ? 1.22 : (pulse ? 1.06 : 1)))
                 .rotationEffect(.degrees(vanishing ? 28 : 0))
-                .shadow(color: .yellow.opacity(hovering ? 0.75 : 0), radius: 7)
+                .shadow(color: .yellow.opacity(vanishing ? 0 : (hovering ? 0.9 : (pulse ? 0.6 : 0.28))),
+                        radius: hovering ? 9 : (pulse ? 8 : 4))
                 .onHover { hovering = $0 }
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
                 .onTapGesture {
                     // Animate the key away first, then record it — otherwise the
                     // view is removed before the animation can be seen.
@@ -119,7 +128,7 @@ struct SecretKeyView: View {
                         vault.collect(id)
                     }
                 }
-                .help("Something shiny…")
+                .help("A hidden LiveWall key — click to collect it!")
                 .accessibilityHidden(true)
         }
     }
@@ -193,11 +202,11 @@ extension KeyVault {
         let host = NSHostingView(rootView:
             HStack {
                 Spacer()
-                SecretKeyView(id: KeyVault.updatesKey, size: 13)
+                SecretKeyView(id: KeyVault.updatesKey, size: 16)
             }
-            .frame(width: 240, height: 22)
+            .frame(width: 240, height: 24)
         )
-        host.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        host.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
         return host
     }
 }

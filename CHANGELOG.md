@@ -2,6 +2,20 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.4 — Full-screen games & easier keys
+
+- Added a **Full Screen** button to every game (⌃⌘F), with an Exit Full Screen toggle.
+- Made the ten hidden keys easier to spot: brighter, with a gentle glow pulse.
+- Added a keys-progress hint in the sidebar once you've found your first key, showing how many remain and where to look.
+- The update-popup key now also appears when you're already up to date, so it's always reachable.
+- Enlarged the Settings and update-popup keys so they're simpler to find.
+
+## 1.7.3 — Skate wallpapers
+
+- Added a dedicated Skate category with 15 live DesktopHut wallpapers.
+- Added verified direct MP4 downloads and lightweight poster images for every Skate card.
+- Excluded the phone-shaped result so all included wallpapers fit desktop displays.
+
 ## 1.6.12 — Copy movie links
 
 - Added “Copy Google Drive Link” to every Drive movie card’s right-click menu.

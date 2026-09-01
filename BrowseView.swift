@@ -90,6 +90,26 @@ struct LoopingVideoView: NSViewRepresentable {
 }
 
 /// Runs bundled HTML games inside LiveWall without opening a separate browser.
+/// Toggles the app's real window into and out of native macOS full-screen.
+///
+/// The game plays inside a SwiftUI `.sheet`, which is a child window attached to
+/// the main window. Full-screen belongs to the parent, so we target the titled,
+/// visible window (the sheet rides along and grows to fill the space).
+@MainActor
+enum GameWindow {
+    static func toggleFullscreen() {
+        let window = NSApp.mainWindow
+            ?? NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+        window?.toggleFullScreen(nil)
+    }
+
+    static var isFullscreen: Bool {
+        let window = NSApp.mainWindow
+            ?? NSApp.windows.first { $0.isVisible && $0.styleMask.contains(.titled) }
+        return window?.styleMask.contains(.fullScreen) ?? false
+    }
+}
+
 struct BundledGameView: NSViewRepresentable {
     let resourceName: String
 
@@ -571,6 +591,7 @@ struct BrowseView: View {
         return DisplayObserver.displayID(for: screen)
     }
     @State private var playingGame: BundledGameEntry?
+    @State private var gameFullscreen = false
     @State private var gameSearch = ""
     @State private var gameSort = "Name"
     @State private var gameFilter = "All"
@@ -712,6 +733,25 @@ struct BrowseView: View {
                         .font(.system(size: 18, weight: .semibold, design: .serif))
                         .foregroundStyle(.white)
                     Spacer()
+                    Button {
+                        GameWindow.toggleFullscreen()
+                        gameFullscreen = GameWindow.isFullscreen
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: gameFullscreen
+                                  ? "arrow.down.right.and.arrow.up.left"
+                                  : "arrow.up.left.and.arrow.down.right")
+                                .font(.system(size: 13, weight: .bold))
+                            Text(gameFullscreen ? "Exit Full Screen" : "Full Screen")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(Color.white.opacity(0.14), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("f", modifiers: [.command, .control])   // ⌃⌘F, macOS full-screen shortcut
+                    .help("Toggle full screen")
                     Button { playingGame = nil } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 22)).foregroundStyle(.white.opacity(0.7))
@@ -722,6 +762,7 @@ struct BrowseView: View {
                     .frame(minWidth: 900, minHeight: 560)
             }
             .background(Color(red: 0.04, green: 0.04, blue: 0.05))
+            .onAppear { gameFullscreen = GameWindow.isFullscreen }
         }
         .sheet(item: $selectedMovie) { item in
             moviePlayerSheet(item)
@@ -901,6 +942,34 @@ struct BrowseView: View {
                 navRow(t)
             }
             Spacer(minLength: 0)
+
+            // Once a hunter has found at least one key, show progress and a hint
+            // so they know how many remain and roughly where to look. Hidden
+            // before the first find (no spoiler) and after Games unlocks.
+            if keys.count > 0 && !keys.isUnlocked {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 7) {
+                        Text("🔑").font(.system(size: 13))
+                        Text("\(keys.count)/\(KeyVault.total) keys found")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Palette.text)
+                    }
+                    HStack(spacing: 4) {
+                        ForEach(0..<KeyVault.total, id: \.self) { i in
+                            Circle()
+                                .fill(i < keys.count ? Color.yellow : Palette.hairline)
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    Text("Hidden on wallpaper pages, Home, Settings & the update popup.")
+                        .font(.system(size: 10)).foregroundStyle(Palette.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.chip, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 12).padding(.bottom, 6)
+            }
 
             // Bottom cluster: a filled primary row, then Profile / Feedback /
             // Settings — the shape Backdrop uses.
@@ -2218,7 +2287,7 @@ struct SettingsSheet: View {
                 HStack(spacing: 6) {
                     Text("LiveWall checks the shared GitHub release channel when you ask it to.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
-                    SecretKeyView(id: KeyVault.settingsKey, size: 12)   // key 8
+                    SecretKeyView(id: KeyVault.settingsKey, size: 16)   // key 8
                 }
                 Toggle("Share anonymous usage stats", isOn: Binding(
                     get: { UserDefaults.standard.object(forKey: Analytics.optOutKey) as? Bool ?? true },
