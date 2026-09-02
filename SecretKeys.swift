@@ -121,9 +121,10 @@ struct SecretKeyView: View {
     @State private var pulse = false
 
     private var restOpacity: Double {
-        // Hard keys are dimmer than the easy ones but still clearly visible —
-        // the challenge is that they're small and in odd spots, not invisible.
-        if subtle { return 0.6 }
+        // Hard keys are full-strength now — they're guaranteed visible thanks to
+        // the dark backing chip below. The challenge is they're small, still, and
+        // in odd corners, not that they're faint.
+        if subtle { return 0.95 }
         return pulse ? 0.95 : 0.72
     }
 
@@ -131,14 +132,21 @@ struct SecretKeyView: View {
         if !vault.has(id) {
             Text("🔑")
                 .font(.system(size: size))
-                // Easy keys glow and pulse; hard keys are dim and still, but
-                // seeable — you just have to look in the odd corners.
+                // Easy keys glow and pulse; hard keys sit on a dark chip so they
+                // stay clearly visible over any artwork — just tucked in odd spots.
                 .opacity(vanishing ? 0 : (hovering ? 1 : restOpacity))
                 .scaleEffect(vanishing ? 1.9 : (hovering ? 1.22 : (pulse && !subtle ? 1.06 : 1)))
                 .rotationEffect(.degrees(vanishing ? 28 : 0))
-                // A soft dark halo keeps a hard key legible even over bright,
-                // busy artwork, without the eye-catching yellow glow.
-                .shadow(color: .black.opacity(vanishing ? 0 : (subtle ? 0.7 : 0)), radius: 2)
+                .padding(subtle ? 5 : 0)
+                .background {
+                    // Guaranteed-contrast backing for the hard keys so they can
+                    // never disappear into a bright wallpaper.
+                    if subtle && !vanishing {
+                        Circle()
+                            .fill(Color.black.opacity(hovering ? 0.7 : 0.5))
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                    }
+                }
                 .shadow(color: .yellow.opacity(vanishing ? 0 : (hovering ? 0.9 : (subtle ? 0 : (pulse ? 0.6 : 0.28)))),
                         radius: hovering ? 9 : (subtle ? 0 : (pulse ? 8 : 4)))
                 .onHover { hovering = $0 }

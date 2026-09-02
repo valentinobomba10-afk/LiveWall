@@ -2,6 +2,10 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.11 — Hard keys guaranteed visible
+
+- The 5 hard keys now sit on a **dark circular chip** (black disc + white outline) so they stay clearly visible over any wallpaper, no matter how bright or busy. Still small, still no glow/pulse, still in odd corners — but you can always see them.
+
 ## 1.7.10 — Make the hard keys visible
 
 - The 5 hard keys were too faint to see. They're now clearly visible (dimmer than the easy ones, with a soft dark halo so they read over bright art) and a bit larger — still no glow/pulse and still in odd corners, so they're harder but findable.
