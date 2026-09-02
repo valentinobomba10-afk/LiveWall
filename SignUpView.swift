@@ -11,7 +11,7 @@ struct LiveWallRootView: View {
 
     var body: some View {
         if auth.isSignedIn || skippedSignIn {
-            BrowseView(vm: vm, library: library, movies: movies)
+            LiveWallUI(vm: vm, library: library, movies: movies)
         } else {
             AuthView(onSkip: { skippedSignIn = true })
         }

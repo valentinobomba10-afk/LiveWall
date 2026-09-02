@@ -15,6 +15,7 @@ let package = Package(
                 "AppDelegate.swift",
                 "ControlPanelView.swift",
                 "BrowseView.swift",
+                "LiveWallUI.swift",
                 "SignUpView.swift",
                 "Library.swift",
                 "Movie.swift",

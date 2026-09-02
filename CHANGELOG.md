@@ -2,6 +2,26 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 2.0.0 — New interface
+
+The interface has been rebuilt from scratch. The old `BrowseView` UI is deleted, not restyled — LiveWall now renders an entirely new UI layer (`LiveWallUI.swift`) built on one design system. All wallpaper, widget, movie, game and account functionality is unchanged.
+
+- **New design system** — frosted glass panels, soft grey/white surfaces, thin borders, 18px cards, Apple-style spacing, blue→purple accents.
+- **New sidebar** — LiveWall logo, then Home / Wallpapers / Widgets / Favorites / Discover, a divider, then My Setups / Settings. The selected row gets a soft rounded highlight.
+- **New Home** — a large Current Wallpaper card (LIVE + resolution badges, name, type, Preview / Set Wallpaper / Apply), a widgets panel on the right, Recent Wallpapers along the bottom-left, and a Quick Actions 2×2 grid bottom-right.
+- **Every page rebuilt** on the same system: Wallpapers, Wallpaper Detail, Widgets, Favorites, Discover, My Setups, Settings, Movies and Games.
+- Fixed the Home layout collapsing on wide and full-screen windows — the hero card sized itself from the scroll view's unbounded height and pushed the widgets panel off-screen.
+
+## 1.9.0 — Complete UI rebuild
+
+The interface has been rebuilt from the ground up to match the LiveWall design.
+
+- **New window shell** — a real macOS unified toolbar across the top: space for the traffic lights, one centred "Search wallpapers, widgets…" field, and your account avatar. The old floating pill controls are gone.
+- **New sidebar** — brand lockup, the seven primary sections (Home, Wallpapers, Widgets, Favorites, Discover, My Setups, Settings), a quiet Library group underneath, and the LiveWall Pro card pinned to the bottom.
+- **Home is a true dashboard** — a large wallpaper preview card on the left with Recent Wallpapers under it, and a widgets panel on the right with Quick Actions below. Exactly the reference layout.
+- **Real widgets, not mockup filler** — a live analog clock, live rotation status, and an app launcher that shows your Mac's actual app icons and really opens them.
+- **Discover is its own page** now, instead of a grid bolted under Home.
+
 ## 1.8.0 — New design
 
 - Redesigned around a new visual system: violet-biased neutrals, a blue→purple accent, glass cards and 16px radii.
