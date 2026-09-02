@@ -31,7 +31,11 @@ import Carbon.HIToolbox
             "pauseOnBattery": false,
             "pauseOnLowPowerMode": false,
             "pauseOnFullscreen": false,
-            "pauseWhenHidden": false
+            "pauseWhenHidden": false,
+            // Auto-check for updates at launch is on by default (opt-out in
+            // Settings). Without this default the key read back false, so the
+            // launch check never ran and "auto update" appeared broken.
+            "updateNotificationsEnabled": true
         ])
         // Launch-at-login is opt-in (Settings), default off. Forcing it on every
         // start auto-started the app as a login background process, which raced

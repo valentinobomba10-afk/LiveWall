@@ -590,7 +590,11 @@ struct BrowseView: View {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return 0 }
         return DisplayObserver.displayID(for: screen)
     }
-    @State private var playingGame: BundledGameEntry?
+    // Games open like browser tabs: several can be open at once, each kept alive
+    // so switching tabs never reloads a game. No address bar is ever shown.
+    @State private var openGames: [BundledGameEntry] = []
+    @State private var activeGameID: BundledGameEntry.ID?
+    @State private var showGames = false
     @State private var gameFullscreen = false
     @State private var gameSearch = ""
     @State private var gameSort = "Name"
@@ -715,55 +719,7 @@ struct BrowseView: View {
             detailItem = nil
             withAnimation(.easeOut(duration: 0.15)) { tab = .mine }
         }
-        .sheet(item: $playingGame) { game in
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Button { playingGame = nil } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "chevron.left").font(.system(size: 13, weight: .bold))
-                            Text("Back").font(.system(size: 14, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 9)
-                        .background(Color.accentColor, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.cancelAction)   // Esc also exits
-                    Text(game.title)
-                        .font(.system(size: 18, weight: .semibold, design: .serif))
-                        .foregroundStyle(.white)
-                    Spacer()
-                    Button {
-                        GameWindow.toggleFullscreen()
-                        gameFullscreen = GameWindow.isFullscreen
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: gameFullscreen
-                                  ? "arrow.down.right.and.arrow.up.left"
-                                  : "arrow.up.left.and.arrow.down.right")
-                                .font(.system(size: 13, weight: .bold))
-                            Text(gameFullscreen ? "Exit Full Screen" : "Full Screen")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 9)
-                        .background(Color.white.opacity(0.14), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut("f", modifiers: [.command, .control])   // ⌃⌘F, macOS full-screen shortcut
-                    .help("Toggle full screen")
-                    Button { playingGame = nil } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 22)).foregroundStyle(.white.opacity(0.7))
-                    }.buttonStyle(.plain).help("Exit game")
-                }
-                .padding(14)
-                BundledGameView(resourceName: game.resourceName)
-                    .frame(minWidth: 900, minHeight: 560)
-            }
-            .background(Color(red: 0.04, green: 0.04, blue: 0.05))
-            .onAppear { gameFullscreen = GameWindow.isFullscreen }
-        }
+        .sheet(isPresented: $showGames) { gameBrowser }
         .sheet(item: $selectedMovie) { item in
             moviePlayerSheet(item)
         }
@@ -779,6 +735,125 @@ struct BrowseView: View {
 
     private func gameTitle(for resource: String) -> String {
         bundledGames.first(where: { $0.resourceName == resource })?.title ?? "LiveWall Game"
+    }
+
+    // MARK: Games — browser-style tabs
+
+    /// Opens a game as a tab. If it's already open, just switches to it, so a
+    /// game never loads twice. Presents the browser if it isn't showing yet.
+    private func openGame(_ game: BundledGameEntry) {
+        if !openGames.contains(where: { $0.id == game.id }) { openGames.append(game) }
+        activeGameID = game.id
+        showGames = true
+    }
+
+    /// Closes one tab. Picks a neighbour to keep active; closing the last tab
+    /// dismisses the whole browser.
+    private func closeGame(_ game: BundledGameEntry) {
+        guard let idx = openGames.firstIndex(where: { $0.id == game.id }) else { return }
+        openGames.remove(at: idx)
+        if openGames.isEmpty {
+            showGames = false
+            activeGameID = nil
+        } else if activeGameID == game.id {
+            activeGameID = openGames[min(idx, openGames.count - 1)].id
+        }
+    }
+
+    /// A Chrome-like game browser: a tab strip on top, one live web view per
+    /// open game underneath. No address bar is ever shown — just the game.
+    private var gameBrowser: some View {
+        VStack(spacing: 0) {
+            // Toolbar: exit, tab strip, full-screen.
+            HStack(spacing: 10) {
+                Button { exitGameBrowser() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold))
+                        Text("Back").font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 13).padding(.vertical, 7)
+                    .background(Color.accentColor, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)   // Esc exits the browser
+
+                // Scrollable tab strip.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(openGames) { game in gameTab(game) }
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    GameWindow.toggleFullscreen()
+                    gameFullscreen = GameWindow.isFullscreen
+                } label: {
+                    Image(systemName: gameFullscreen
+                          ? "arrow.down.right.and.arrow.up.left"
+                          : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 30)
+                        .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("f", modifiers: [.command, .control])
+                .help("Toggle full screen")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Color(red: 0.09, green: 0.09, blue: 0.11))
+
+            // One web view per open game, kept alive; only the active one shows.
+            ZStack {
+                Color(red: 0.04, green: 0.04, blue: 0.05)
+                ForEach(openGames) { game in
+                    BundledGameView(resourceName: game.resourceName)
+                        .opacity(game.id == activeGameID ? 1 : 0)
+                        .allowsHitTesting(game.id == activeGameID)
+                }
+            }
+            .frame(minWidth: 900, minHeight: 560)
+        }
+        .background(Color(red: 0.04, green: 0.04, blue: 0.05))
+        .onAppear { gameFullscreen = GameWindow.isFullscreen }
+    }
+
+    /// A single tab chip: title + close button, highlighted when active.
+    private func gameTab(_ game: BundledGameEntry) -> some View {
+        let active = game.id == activeGameID
+        return HStack(spacing: 7) {
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(active ? 0.9 : 0.5))
+            Text(game.title)
+                .font(.system(size: 12, weight: active ? .semibold : .regular))
+                .foregroundStyle(.white.opacity(active ? 1 : 0.7))
+                .lineLimit(1)
+            Button { closeGame(game) } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).help("Close tab")
+        }
+        .padding(.leading, 11).padding(.trailing, 6).padding(.vertical, 6)
+        .background(active ? Color.white.opacity(0.16) : Color.white.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(active ? Color.accentColor.opacity(0.7) : .clear, lineWidth: 1))
+        .frame(maxWidth: 200)
+        .contentShape(Rectangle())
+        .onTapGesture { activeGameID = game.id }
+    }
+
+    /// Closes the whole browser and tears every game down.
+    private func exitGameBrowser() {
+        showGames = false
+        openGames = []
+        activeGameID = nil
     }
 
     // MARK: Top bar
@@ -1416,7 +1491,7 @@ struct BrowseView: View {
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(.white.opacity(0.12)))
 
                     Button {
-                        if let game = visibleGames.randomElement() { playingGame = game }
+                        if let game = visibleGames.randomElement() { openGame(game) }
                     } label: {
                         Text("🎲").font(.system(size: 21)).frame(width: 42, height: 42)
                             .background(Color.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -1468,7 +1543,7 @@ struct BrowseView: View {
         let favorite = gameFavorites.contains(game.id)
         let hue = Double(abs(game.title.hashValue % 360)) / 360.0
         return Button {
-            playingGame = game
+            openGame(game)
         } label: {
             ZStack(alignment: .bottomLeading) {
                 LinearGradient(colors: [Color(hue: hue, saturation: 0.58, brightness: 0.58), Color(hue: (hue + 0.16).truncatingRemainder(dividingBy: 1), saturation: 0.8, brightness: 0.16)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -2296,10 +2371,12 @@ struct SettingsSheet: View {
                 Text("A random ID, the app version and your macOS version. No personal data, ever.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
 
-                Toggle("Notify me when LiveWall starts", isOn: Binding(
-                    get: { UserDefaults.standard.object(forKey: "updateNotificationsEnabled") as? Bool ?? false },
+                Toggle("Check for updates automatically at launch", isOn: Binding(
+                    get: { UserDefaults.standard.object(forKey: "updateNotificationsEnabled") as? Bool ?? true },
                     set: { UserDefaults.standard.set($0, forKey: "updateNotificationsEnabled") }
                 ))
+                Text("When on, LiveWall quietly checks for a newer version each time it opens and pops up if one is ready.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 Button("Check for Updates…") { vm.checkForUpdates() }.buttonStyle(.borderedProminent)
             }
 

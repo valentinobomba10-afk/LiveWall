@@ -2,6 +2,12 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.5 — Game tabs & working auto-update
+
+- Games now open in a **browser-style tabbed view** — open several at once, switch between them without reloading, close individual tabs. No address bar, just the game.
+- **Fixed auto-update:** LiveWall now checks for a newer version automatically at launch (it silently defaulted to off before). Toggle it in Settings › App updates.
+- Clarified the update setting label and added an explanation.
+
 ## 1.7.4 — Full-screen games & easier keys
 
 - Added a **Full Screen** button to every game (⌃⌘F), with an Exit Full Screen toggle.
