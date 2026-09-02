@@ -2,6 +2,10 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.7 — All keys on wallpapers
+
+- Moved the Settings, Home, and update-popup keys onto wallpaper pages, so all ten hidden keys now live on wallpapers (bottom-right of each). Added Mist Over the Pines, Night Sky, and Cosmic Mountain OLED as the three new keyed wallpapers.
+
 ## 1.7.6 — Fix Discover grid layout
 
 - Fixed the Home/Discover grid where wallpaper cards rendered oversized and overlapped each other. Each card is now a clean 16:9 tile locked to its column.

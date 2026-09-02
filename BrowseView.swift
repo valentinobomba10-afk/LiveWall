@@ -1036,7 +1036,7 @@ struct BrowseView: View {
                                 .frame(width: 6, height: 6)
                         }
                     }
-                    Text("Hidden on wallpaper pages, Home, Settings & the update popup.")
+                    Text("Hidden on ten wallpaper pages — open wallpapers from your Library and look bottom-right.")
                         .font(.system(size: 10)).foregroundStyle(Palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2028,15 +2028,9 @@ struct BrowseView: View {
                 .padding(.trailing, 26).padding(.bottom, 200)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
-        if tab == .home, detailItem == nil {
-            SecretKeyLayer(id: KeyVault.homeKey)
-                .frame(width: 30, height: 30)
-                .padding(.leading, 30).padding(.bottom, 96)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        }
     }
 
-    /// Seven named wallpapers carry a hidden key.
+    /// Ten named wallpapers carry a hidden key.
     private func wallpaperKey(for item: LibraryItem) -> String? {
         guard let slot = KeyVault.keyedWallpaperTitles.firstIndex(of: item.title) else { return nil }
         return KeyVault.wallpaperKeys[slot]
@@ -2370,11 +2364,8 @@ struct SettingsSheet: View {
             }
 
             section("App updates") {
-                HStack(spacing: 6) {
-                    Text("LiveWall checks the shared GitHub release channel when you ask it to.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                    SecretKeyView(id: KeyVault.settingsKey, size: 16)   // key 8
-                }
+                Text("LiveWall checks the shared GitHub release channel when you ask it to.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 Toggle("Share anonymous usage stats", isOn: Binding(
                     get: { UserDefaults.standard.object(forKey: Analytics.optOutKey) as? Bool ?? true },
                     set: { UserDefaults.standard.set($0, forKey: Analytics.optOutKey) }

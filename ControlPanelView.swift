@@ -361,8 +361,6 @@ final class WallpaperViewModel: ObservableObject {
             do {
                 let release = try await GitHubUpdateService.latestRelease()
                 let alert = NSAlert()
-                // Key 9 rides along as the alert's accessory view.
-                alert.accessoryView = KeyVault.alertAccessory()
                 if GitHubUpdateService.isNewer(release.tagName, than: installed) {
                     alert.messageText = "LiveWall \(release.tagName) is ready"
                     alert.informativeText = "Download the latest version from the shared LiveWall release channel."
@@ -387,9 +385,6 @@ final class WallpaperViewModel: ObservableObject {
                 // means nothing newer exists. Say so plainly.
                 guard !silent else { return }
                 let alert = NSAlert()
-                // Key 9 rides along here too, so it's reachable even when there's
-                // no published release yet.
-                alert.accessoryView = KeyVault.alertAccessory()
                 alert.messageText = "LiveWall is up to date"
                 alert.informativeText = "You’re running version \(installed). No newer version is available."
                 alert.addButton(withTitle: "OK")

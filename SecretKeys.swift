@@ -10,19 +10,14 @@ final class KeyVault: ObservableObject {
     static let shared = KeyVault()
     static let total = 10
 
-    /// Stable ids for every hidden key. Seven live on wallpaper pages, the
-    /// remaining three on Settings, the update popup and Home.
-    static let wallpaperKeys = (0..<7).map { "wallpaper-\($0)" }
-    static let settingsKey = "settings"
-    static let updatesKey  = "updates"
-    static let homeKey     = "home"
+    /// Stable ids for every hidden key. All ten now live on wallpaper pages.
+    static let wallpaperKeys = (0..<10).map { "wallpaper-\($0)" }
 
-    /// The seven wallpapers that carry a key, pinned by title.
+    /// The ten wallpapers that carry a key, pinned by title.
     ///
-    /// These were originally chosen by index, but the template list begins with
-    /// however many interactive wallpapers happen to be bundled, so the offsets
-    /// drifted and a key landed on the wrong page. Matching on title is stable
-    /// regardless of list order or how many MotionBGS pages have loaded.
+    /// Matching on title (not index) is stable regardless of list order or how
+    /// many MotionBGS pages have loaded. Every title here is in the built-in
+    /// catalog, so all ten keys are always reachable from the Library.
     static let keyedWallpaperTitles = [
         "MotionBGS · Rainy Forest",
         "MotionBGS · Spring Flower Field",
@@ -31,6 +26,9 @@ final class KeyVault: ObservableObject {
         "MotionBGS · Snowfall in Forest",
         "MotionBGS · Large Cherry Blossom Tree",
         "MotionBGS · Orange Train at Sunset",
+        "MotionBGS · Mist Over the Pines",
+        "MotionBGS · Night Sky",
+        "MotionBGS · Cosmic Mountain OLED",
     ]
 
     private let storageKey = "liveWallSecretKeys"
@@ -73,7 +71,7 @@ final class KeyVault: ObservableObject {
     }
 
     /// Every key id — used by the LiveWall2013 cheat code to unlock Games instantly.
-    static var allIDs: [String] { wallpaperKeys + [settingsKey, updatesKey, homeKey] }
+    static var allIDs: [String] { wallpaperKeys }
 
     /// Instantly collects every key (the LiveWall2013 shortcut). Persists, and
     /// shows the unlock banner if it wasn't already unlocked.
@@ -191,23 +189,6 @@ struct KeyBannerOverlay: View {
 
     private func dismiss() {
         withAnimation(.easeOut(duration: 0.2)) { vault.banner = nil }
-    }
-}
-
-extension KeyVault {
-    /// Builds the small key view used as the Check for Updates alert's accessory,
-    /// so key 9 lives inside the existing popup rather than a new one.
-    @MainActor static func alertAccessory() -> NSView? {
-        guard !shared.has(updatesKey) else { return nil }
-        let host = NSHostingView(rootView:
-            HStack {
-                Spacer()
-                SecretKeyView(id: KeyVault.updatesKey, size: 16)
-            }
-            .frame(width: 240, height: 24)
-        )
-        host.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
-        return host
     }
 }
 
