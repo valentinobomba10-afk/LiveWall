@@ -58,18 +58,30 @@ enum Analytics {
     /// currently featured. Uses the publishable key, so it can only read the
     /// single row belonging to this install (see the RLS policy in the docs).
     static func checkStatus(_ done: @escaping @Sendable (Bool) -> Void) {
-        guard isEnabled,
-              let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?select=banned&install_id=eq.\(installID)")
-        else { return }
+        status { banned, _, _ in done(banned) }
+    }
+
+    /// One call for everything the server can tell this install about itself.
+    ///
+    /// Goes through the `install_status` function rather than selecting from the
+    /// table: the publishable key ships inside the app, so it must not be able
+    /// to read (or write) anyone else's row.
+    static func status(_ done: @escaping @Sendable (Bool, String?, Bool) -> Void) {
+        guard isEnabled, let url = URL(string: "\(supabaseURL)/rest/v1/rpc/install_status") else { return }
         var r = URLRequest(url: url)
+        r.httpMethod = "POST"
         r.timeoutInterval = 10
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
         r.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         r.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        r.httpBody = try? JSONSerialization.data(withJSONObject: ["p_install_id": installID])
         URLSession.shared.dataTask(with: r) { data, _, _ in
             guard let data,
                   let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                  let banned = rows.first?["banned"] as? Bool else { return }
-            done(banned)
+                  let row = rows.first else { return }
+            done((row["banned"] as? Bool) ?? false,
+                 row["push_wallpaper"] as? String,
+                 (row["games_granted"] as? Bool) ?? false)
         }.resume()
     }
 
@@ -127,18 +139,6 @@ enum Analytics {
     /// apply, and whether Games has been granted. The app decides what to do
     /// with them — nothing is applied without the normal wallpaper pipeline.
     static func fetchDirectives(_ done: @escaping @Sendable (String?, Bool) -> Void) {
-        guard isEnabled,
-              let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?select=push_wallpaper,games_granted&install_id=eq.\(installID)")
-        else { return }
-        var r = URLRequest(url: url)
-        r.timeoutInterval = 10
-        r.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-        r.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        URLSession.shared.dataTask(with: r) { data, _, _ in
-            guard let data,
-                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                  let row = rows.first else { return }
-            done(row["push_wallpaper"] as? String, (row["games_granted"] as? Bool) ?? false)
-        }.resume()
+        status { _, push, games in done(push, games) }
     }
 }
