@@ -12,6 +12,59 @@ import AppKit
 // before, so all working functionality is preserved.
 // =============================================================================
 
+/// The URL a preview should actually play.
+///
+/// `heroPlayableURL` refuses to stream remote 4K clips, which is right — but once
+/// a catalog wallpaper has been downloaded we have a real local file, and the
+/// preview should animate instead of sitting on a still poster.
+func previewURL(for item: LibraryItem, vm: WallpaperViewModel) -> URL? {
+    if let direct = heroPlayableURL(item) { return direct }
+    if let local = vm.localCopy(of: item) { return heroPlayableURL(local) }
+    return nil
+}
+
+/// Renders the hidden key a wallpaper carries, if any.
+///
+/// Easy keys glow bottom-right. The five hard keys sit on a dark chip in odd
+/// corners so they're visible but easy to walk past. This is hosted through
+/// `SecretKeyLayer` because the preview video is an AppKit layer that would
+/// otherwise composite on top of plain SwiftUI.
+struct WallpaperKeyOverlay: View {
+    let item: LibraryItem
+    @ObservedObject private var vault = KeyVault.shared
+
+    var body: some View {
+        if let slot = vault.slot(forTitle: item.title) {
+            let hard = KeyVault.isHardSlot(slot)
+            let p = placement(slot)
+            SecretKeyLayer(id: KeyVault.wallpaperKeys[slot], size: p.size, subtle: hard)
+                .frame(width: p.size + 16, height: p.size + 16)
+                .padding(.leading, p.left).padding(.trailing, p.right)
+                .padding(.top, p.top).padding(.bottom, p.bottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: p.align)
+        }
+    }
+
+    private struct Place {
+        var align: Alignment
+        var left: CGFloat = 0, right: CGFloat = 0, top: CGFloat = 0, bottom: CGFloat = 0
+        var size: CGFloat = 26
+    }
+
+    private func placement(_ slot: Int) -> Place {
+        guard KeyVault.isHardSlot(slot) else {
+            return Place(align: .bottomTrailing, right: 18, bottom: 64, size: 26)
+        }
+        switch slot {
+        case 10: return Place(align: .topLeading,     left: 16, top: 16, size: 17)   // Goku
+        case 11: return Place(align: .top,            top: 14, size: 16)
+        case 12: return Place(align: .bottomLeading,  left: 16, bottom: 16, size: 16)
+        case 13: return Place(align: .trailing,       right: 14, size: 16)
+        default: return Place(align: .topTrailing,    right: 16, top: 58, size: 16)
+        }
+    }
+}
+
 // MARK: - Design system
 
 enum DS {
@@ -144,6 +197,40 @@ struct DSGlassButton: ButtonStyle {
     }
 }
 
+
+// MARK: - Shared UI state
+//
+// Cross-view state lives in one observable object. It used to live in @State on
+// the root struct, which was then passed by value into child views — writes from
+// a child mutated a copy, so buttons like Preview / Apply appeared dead.
+@MainActor
+final class UIState: ObservableObject {
+    @Published var page: LiveWallUI.Page = .home
+    @Published var detail: LibraryItem?
+    @Published var current: LibraryItem?
+    @Published var search = ""
+    @Published var wallFilter = "All"
+    @Published var adminUnlocked = false
+    @Published var favorites: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
+    /// Transient confirmation shown after an action (Apply, Shuffle, …).
+    @Published var toast: String?
+
+    func isFavorite(_ item: LibraryItem) -> Bool { favorites.contains(item.id.uuidString) }
+    func toggleFavorite(_ item: LibraryItem) {
+        let k = item.id.uuidString
+        if favorites.contains(k) { favorites.remove(k) } else { favorites.insert(k) }
+        UserDefaults.standard.set(Array(favorites), forKey: "favorites")
+    }
+    func open(_ item: LibraryItem) { detail = item }
+    /// Keeps the engine's selection in step with what the user opened.
+    func open(_ item: LibraryItem, vm: WallpaperViewModel) { vm.selectedID = item.id; detail = item }
+    func go(_ p: LiveWallUI.Page) { detail = nil; page = p }
+    func say(_ msg: String) {
+        toast = msg
+        Task { try? await Task.sleep(nanoseconds: 2_600_000_000); if toast == msg { toast = nil } }
+    }
+}
+
 // MARK: - Root
 
 struct LiveWallUI: View {
@@ -156,7 +243,7 @@ struct LiveWallUI: View {
         case home = "Home", wallpapers = "Wallpapers", widgets = "Widgets",
              favorites = "Favorites", discover = "Discover",
              setups = "My Setups", settings = "Settings",
-             mine = "My Wallpapers", movies = "Movies", games = "Games",
+             keys = "Keys", mine = "My Wallpapers", movies = "Movies", games = "Games",
              profile = "Profile", admin = "Admin"
         var id: String { rawValue }
         var icon: String {
@@ -168,6 +255,7 @@ struct LiveWallUI: View {
             case .discover:   return "safari.fill"
             case .setups:     return "square.stack.3d.up.fill"
             case .settings:   return "gearshape.fill"
+            case .keys:       return "key.fill"
             case .mine:       return "person.crop.square.fill"
             case .movies:     return "film.fill"
             case .games:      return "gamecontroller.fill"
@@ -176,22 +264,30 @@ struct LiveWallUI: View {
             }
         }
         static let groupA: [Page] = [.home, .wallpapers, .widgets, .favorites, .discover]
-        static let groupB: [Page] = [.setups, .settings]
+        static let groupB: [Page] = [.setups, .keys, .settings]
     }
 
-    @State private var page: Page = .home
-    @State private var detail: LibraryItem?
-    @State private var search = ""
-    @State private var current: LibraryItem?
-    @State private var favorites: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
-    @State private var adminUnlocked = false
-    @State private var wallFilter = "All"
+    @StateObject private var state = UIState()
     @StateObject private var rotation = RotationEngine()
+    @StateObject private var setupStore = SetupStore()
+    @State private var lastLibraryCount = -1
 
     private var allItems: [LibraryItem] { library.items + vm.templates }
     private var displayID: CGDirectDisplayID {
         guard let s = NSScreen.main ?? NSScreen.screens.first else { return 0 }
         return DisplayObserver.displayID(for: s)
+    }
+
+    /// Applies a wallpaper and tells the user what happened. Catalog wallpapers
+    /// download first, which is why Apply used to look like it did nothing.
+    private func applyWallpaper(_ item: LibraryItem, toThisDisplayOnly: Bool = false) {
+        state.current = item
+        if toThisDisplayOnly { vm.apply(item, to: displayID) } else { vm.apply(item) }
+        if item.kind == .directURL && vm.templates.contains(where: { $0.id == item.id }) {
+            state.say("Downloading “\(item.title)”…")
+        } else {
+            state.say("“\(item.title)” applied")
+        }
     }
 
     var body: some View {
@@ -214,19 +310,89 @@ struct LiveWallUI: View {
         .frame(minWidth: 1060, minHeight: 680)
         .tint(DS.blue)
         .onAppear {
-            if current == nil { current = allItems.first }
+            lastLibraryCount = library.items.count
+            KeyVault.shared.refreshGokuTarget(from: allItems.map(\.title))
+            if state.current == nil { state.current = vm.runningItem ?? allItems.first }
+            vm.refreshDisplays()          // so Apply targets a real display
             rotation.apply = { vm.apply($0) }
             rotation.interval = max(vm.rotationMinutes, 1) * 60
             if vm.rotationEnabled { rotation.start(pool: allItems) }
         }
+        // A big, centred download panel — catalog wallpapers download before they
+        // can be applied, and this is the only signal that anything is happening.
+        .overlay {
+            if vm.isDownloading {
+                ZStack {
+                    Color.black.opacity(0.28).ignoresSafeArea()
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle().stroke(DS.divider, lineWidth: 6).frame(width: 74, height: 74)
+                            Circle()
+                                .trim(from: 0, to: min(max(vm.downloadProgress, 0.02), 1))
+                                .stroke(DS.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                                .frame(width: 74, height: 74)
+                                .rotationEffect(.degrees(-90))
+                                .animation(.easeOut(duration: 0.2), value: vm.downloadProgress)
+                            Text("\(Int(min(max(vm.downloadProgress, 0), 1) * 100))%")
+                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .foregroundStyle(DS.ink).monospacedDigit()
+                        }
+                        VStack(spacing: 5) {
+                            Text("Downloading").font(.system(size: 13)).foregroundStyle(DS.ink2)
+                            Text(vm.downloadTitle)
+                                .font(.system(size: 17, weight: .semibold)).foregroundStyle(DS.ink)
+                                .lineLimit(2).multilineTextAlignment(.center)
+                            Text("It'll land in My Wallpapers when it's done.")
+                                .font(.system(size: 11.5)).foregroundStyle(DS.ink3)
+                        }
+                        ProgressView(value: min(max(vm.downloadProgress, 0), 1))
+                            .frame(width: 300)
+                        Button("Cancel") { vm.pauseDownload() }
+                            .buttonStyle(DSGlassButton())
+                    }
+                    .padding(34)
+                    .frame(width: 400)
+                    .glass(DS.rCard, strong: true)
+                    .shadow(color: .black.opacity(0.25), radius: 40, y: 14)
+                }
+                .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 8) {
+                if let toast = state.toast {
+                    Text(toast)
+                        .font(.system(size: 12.5, weight: .medium)).foregroundStyle(DS.ink)
+                        .padding(.horizontal, 15).padding(.vertical, 10)
+                        .glass(DS.rTile, strong: true)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .padding(.bottom, 20)
+            .animation(.easeOut(duration: 0.2), value: state.toast)
+            .animation(.easeOut(duration: 0.2), value: vm.isDownloading)
+        }
+        // A finished download becomes a real library item — show the user where
+        // it went instead of leaving them on the catalog.
+        .onChange(of: vm.templates.count) { _ in
+            KeyVault.shared.refreshGokuTarget(from: allItems.map(\.title))
+        }
+        .onChange(of: library.items.count) { count in
+            guard lastLibraryCount >= 0, count > lastLibraryCount else { lastLibraryCount = count; return }
+            lastLibraryCount = count
+            if let newest = library.items.last { state.current = newest }
+            state.search = ""
+            state.go(.mine)
+            state.say("Saved to My Wallpapers")
+        }
         .overlay { KeyBannerOverlay() }
         .sheet(isPresented: $vm.showAdd) { AddSheet(vm: vm) }
-        .sheet(item: $detail) { item in
+        .sheet(item: $state.detail) { item in
             WallpaperDetail(item: item, vm: vm, displayID: displayID,
-                            isFavorite: favorites.contains(item.id.uuidString),
-                            onFavorite: { toggleFavorite(item) },
-                            onApplied: { current = item },
-                            onClose: { detail = nil })
+                            isFavorite: state.isFavorite(item),
+                            onFavorite: { state.toggleFavorite(item) },
+                            onApplied: { thisOnly in applyWallpaper(item, toThisDisplayOnly: thisOnly) },
+                            onClose: { state.detail = nil })
         }
     }
 
@@ -261,20 +427,20 @@ struct LiveWallUI: View {
             }
 
             // Extras only appear when they're relevant.
-            if !library.items.isEmpty || !movies.items.isEmpty || keys.isUnlocked || adminUnlocked {
+            if !library.items.isEmpty || !movies.items.isEmpty || keys.isUnlocked || state.adminUnlocked {
                 Rectangle().fill(DS.divider).frame(height: 1)
                     .padding(.horizontal, 16).padding(.vertical, 12)
                 VStack(spacing: 2) {
                     if !library.items.isEmpty { navRow(.mine) }
                     navRow(.movies)
                     if keys.isUnlocked { navRow(.games) }
-                    if AdminConfig.shared != nil || adminUnlocked { navRow(.admin) }
+                    if AdminConfig.shared != nil || state.adminUnlocked { navRow(.admin) }
                 }
             }
 
             Spacer(minLength: 12)
 
-            if keys.count > 0 && !keys.isUnlocked { keyProgress }
+            controlCenter
         }
         .frame(width: 208)
         .background(DS.sidebarTint.opacity(0.55))
@@ -284,30 +450,100 @@ struct LiveWallUI: View {
     }
 
     private func navRow(_ p: Page) -> some View {
-        let on = page == p && detail == nil
+        let on = state.page == p && state.detail == nil
         return Button {
-            withAnimation(.easeOut(duration: 0.16)) { detail = nil; page = p }
+            withAnimation(.easeOut(duration: 0.16)) { state.go(p) }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: p.icon)
-                    .font(.system(size: 12.5))
-                    .frame(width: 18)
+                    .font(.system(size: 15))
+                    .frame(width: 22)
                     .foregroundStyle(on ? DS.blue : DS.ink2)
                 Text(p.rawValue)
-                    .font(.system(size: 13, weight: on ? .semibold : .regular))
+                    .font(.system(size: 14.5, weight: on ? .semibold : .medium))
                     .foregroundStyle(on ? DS.blue : DS.ink)
                 Spacer(minLength: 0)
+                if p == .keys && !KeyVault.shared.isUnlocked {
+                    Text("\(KeyVault.shared.count)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(DS.blue.opacity(0.85)))
+                }
             }
-            .padding(.horizontal, 10).frame(height: 30)
+            .padding(.horizontal, 12).frame(height: 38)
             .background {
                 if on {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DS.selectionFill)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DS.selectionFill)
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
+    }
+
+    /// Wallpaper control centre — pause / resume / stop whatever is live, always
+    /// reachable at the bottom of the sidebar.
+    private var controlCenter: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(vm.isRunning ? (vm.isPaused ? Color.orange : DS.live) : DS.ink3)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: vm.isRunning && !vm.isPaused ? DS.live : .clear, radius: 4)
+                Text(vm.isRunning ? (vm.isPaused ? "Paused" : "Playing") : "No wallpaper")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(DS.ink2)
+                Spacer(minLength: 0)
+            }
+
+            Text(vm.runningItem?.title ?? state.current?.title ?? "Nothing running")
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(DS.ink)
+                .lineLimit(1)
+
+            HStack(spacing: 7) {
+                Button {
+                    vm.togglePlay()
+                    state.say(vm.isPaused ? "Wallpaper paused" : "Wallpaper resumed")
+                } label: {
+                    Image(systemName: vm.showAsPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(vm.canTogglePlay ? .white : DS.ink3)
+                        .frame(maxWidth: .infinity).frame(height: 30)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(vm.canTogglePlay ? AnyShapeStyle(DS.blue) : AnyShapeStyle(DS.raised)))
+                }
+                .buttonStyle(.plain).disabled(!vm.canTogglePlay)
+                .help(vm.showAsPlaying ? "Pause the live wallpaper" : "Resume the live wallpaper")
+
+                Button {
+                    vm.stop()
+                    state.say("Wallpaper stopped")
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(vm.isRunning ? Color(red: 0.86, green: 0.25, blue: 0.3) : DS.ink3)
+                        .frame(maxWidth: .infinity).frame(height: 30)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(DS.raised))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(DS.hairline))
+                }
+                .buttonStyle(.plain).disabled(!vm.isRunning)
+                .help("Stop and clear the live wallpaper")
+            }
+
+            // Volume only matters when something is actually playing with sound.
+            HStack(spacing: 7) {
+                Button { vm.muted.toggle() } label: {
+                    Image(systemName: vm.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 11)).foregroundStyle(DS.ink2).frame(width: 20)
+                }.buttonStyle(.plain).help(vm.muted ? "Unmute" : "Mute")
+                Slider(value: $vm.volume, in: 0...1).controlSize(.mini).disabled(vm.muted)
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glass(DS.rTile)
+        .padding(.horizontal, 12).padding(.bottom, 12)
     }
 
     private var keyProgress: some View {
@@ -334,7 +570,7 @@ struct LiveWallUI: View {
 
     private var titlebar: some View {
         HStack(spacing: 12) {
-            Text(detail == nil ? page.rawValue : "Wallpaper")
+            Text(state.detail == nil ? state.page.rawValue : "Wallpaper")
                 .font(.system(size: 14, weight: .semibold)).foregroundStyle(DS.ink)
                 .frame(width: 150, alignment: .leading)
 
@@ -342,15 +578,22 @@ struct LiveWallUI: View {
 
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass").font(.system(size: 11.5)).foregroundStyle(DS.ink3)
-                TextField("Search wallpapers, widgets…", text: $search)
+                TextField("Search wallpapers, widgets…", text: $state.search)
                     .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundStyle(DS.ink)
-                    .onChange(of: search) { v in
-                        if v == "valentino2027games" { search = ""; adminUnlocked = true; page = .admin }
-                        else if v == "LiveWall2013" { search = ""; KeyVault.shared.unlockAll(); page = .games }
-                        else if !v.isEmpty && page == .home { page = .wallpapers }
+                    .onChange(of: state.search) { v in
+                        if v == "valentino2027games" { state.search = ""; state.adminUnlocked = true; state.page = .admin }
+                        else if v == "LiveWall2013" { state.search = ""; KeyVault.shared.unlockAll(); state.page = .games }
+                        else if v == "LiveWallWipe2013" {
+                            // Wipes all key progress and re-locks Games.
+                            state.search = ""
+                            KeyVault.shared.reset()
+                            state.page = .keys
+                            state.say("All keys cleared — Games re-locked")
+                        }
+                        else if !v.isEmpty && state.page == .home { state.page = .wallpapers }
                     }
-                if !search.isEmpty {
-                    Button { search = "" } label: {
+                if !state.search.isEmpty {
+                    Button { state.search = "" } label: {
                         Image(systemName: "xmark.circle.fill").font(.system(size: 11.5)).foregroundStyle(DS.ink3)
                     }.buttonStyle(.plain)
                 }
@@ -366,7 +609,7 @@ struct LiveWallUI: View {
                         .foregroundStyle(DS.ink2).frame(width: 30, height: 30)
                         .glass(DS.rCtl)
                 }.buttonStyle(.plain).help("Add a wallpaper")
-                Button { page = .profile } label: {
+                Button { state.page = .profile } label: {
                     Circle().fill(DS.accent).frame(width: 28, height: 28)
                         .overlay(Text(initial).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white))
                         .shadow(color: DS.blue.opacity(0.35), radius: 5, y: 2)
@@ -385,15 +628,16 @@ struct LiveWallUI: View {
     // MARK: Content router
 
     @ViewBuilder private var content: some View {
-        switch page {
-        case .home:       HomePage(ui: self)
+        switch state.page {
+        case .home:       HomePage(state: state, vm: vm, rotation: rotation, items: allItems, displayID: displayID, onApply: applyWallpaper)
         case .wallpapers: browser(title: "Wallpapers", items: filtered(vm.templates), showFilters: true)
-        case .favorites:  browser(title: "Favorites", items: filtered(allItems.filter { favorites.contains($0.id.uuidString) }), showFilters: false)
+        case .favorites:  browser(title: "Favorites", items: filtered(allItems.filter { state.favorites.contains($0.id.uuidString) }), showFilters: false)
         case .mine:       browser(title: "My Wallpapers", items: filtered(library.items), showFilters: false)
-        case .discover:   DiscoverPage(ui: self)
+        case .discover:   DiscoverPage(state: state, vm: vm, onApply: applyWallpaper)
         case .widgets:    WidgetsPage(displayID: displayID)
-        case .setups:     SetupsPage(ui: self)
+        case .setups:     SetupsPage(state: state, store: setupStore, items: allItems, onApply: applyWallpaper)
         case .settings:   SettingsPage(vm: vm)
+        case .keys:       KeysPage(state: state)
         case .movies:     MoviesPage(movies: movies)
         case .games:      GamesPage()
         case .profile:    ScrollView { ProfileScreen().padding(DS.pad) }
@@ -402,7 +646,7 @@ struct LiveWallUI: View {
     }
 
     @ViewBuilder private var adminPage: some View {
-        if let panel = AdminPanelView(onClose: { page = .home }) { panel }
+        if let panel = AdminPanelView(onClose: { state.page = .home }) { panel }
         else { emptyState("lock.shield", "Admin unavailable", "No admin credentials on this Mac.") }
     }
 
@@ -410,34 +654,16 @@ struct LiveWallUI: View {
 
     fileprivate func filtered(_ items: [LibraryItem]) -> [LibraryItem] {
         var out = items
-        if wallFilter != "All" {
-            out = out.filter { categoryLabel($0) == wallFilter || resolutionLabel($0) == wallFilter }
+        if state.wallFilter != "All" {
+            out = out.filter { categoryLabel($0) == state.wallFilter || resolutionLabel($0) == state.wallFilter }
         }
-        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let q = state.search.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty { out = out.filter { $0.title.lowercased().contains(q) } }
         return out
     }
 
-    fileprivate func toggleFavorite(_ item: LibraryItem) {
-        let key = item.id.uuidString
-        if favorites.contains(key) { favorites.remove(key) } else { favorites.insert(key) }
-        UserDefaults.standard.set(Array(favorites), forKey: "favorites")
-    }
-
-    fileprivate func isFavorite(_ item: LibraryItem) -> Bool { favorites.contains(item.id.uuidString) }
-    fileprivate func open(_ item: LibraryItem) { vm.selectedID = item.id; detail = item }
-    fileprivate func setCurrent(_ item: LibraryItem) { current = item }
-    fileprivate var currentItem: LibraryItem? { current ?? allItems.first }
-    fileprivate var everything: [LibraryItem] { allItems }
-    fileprivate var rotationEngine: RotationEngine { rotation }
-    fileprivate var viewModel: WallpaperViewModel { vm }
-    fileprivate var primaryDisplay: CGDirectDisplayID { displayID }
-    fileprivate func goTo(_ p: Page) { page = p }
-    fileprivate var categories: [String] {
+    private var categories: [String] {
         ["All"] + Array(Set(vm.templates.map { categoryLabel($0) })).sorted()
-    }
-    fileprivate var filterBinding: Binding<String> {
-        Binding(get: { wallFilter }, set: { wallFilter = $0 })
     }
 
     // MARK: Wallpaper browser (Wallpapers / Favorites / My Wallpapers)
@@ -463,8 +689,8 @@ struct LiveWallUI: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 7) {
                             ForEach(categories, id: \.self) { c in
-                                let on = wallFilter == c
-                                Button { withAnimation(.easeOut(duration: 0.15)) { wallFilter = c } } label: {
+                                let on = state.wallFilter == c
+                                Button { withAnimation(.easeOut(duration: 0.15)) { state.wallFilter = c } } label: {
                                     Text(c).font(.system(size: 12, weight: on ? .semibold : .regular))
                                         .foregroundStyle(on ? .white : DS.ink2)
                                         .padding(.horizontal, 13).frame(height: 28)
@@ -488,11 +714,11 @@ struct LiveWallUI: View {
                               spacing: DS.gap) {
                         ForEach(items) { item in
                             WallTile(item: item,
-                                     favorite: isFavorite(item),
+                                     favorite: state.isFavorite(item),
                                      running: vm.runningItemID == item.id,
-                                     onOpen: { open(item) },
-                                     onApply: { vm.apply(item); current = item },
-                                     onFavorite: { toggleFavorite(item) })
+                                     onOpen: { state.open(item) },
+                                     onApply: { applyWallpaper(item) },
+                                     onFavorite: { state.toggleFavorite(item) })
                         }
                     }
                 }
@@ -829,7 +1055,12 @@ private struct WallTile: View {
 // MARK: - HOME
 
 private struct HomePage: View {
-    let ui: LiveWallUI
+    @ObservedObject var state: UIState
+    @ObservedObject var vm: WallpaperViewModel
+    @ObservedObject var rotation: RotationEngine
+    let items: [LibraryItem]
+    let displayID: CGDirectDisplayID
+    var onApply: (LibraryItem, Bool) -> Void
 
     var body: some View {
         GeometryReader { geo in
@@ -848,15 +1079,15 @@ private struct HomePage: View {
                 HStack(alignment: .top, spacing: DS.gap) {
                     // CENTRE column — the wallpaper card dominates, Recent below.
                     VStack(spacing: DS.gap) {
-                        CurrentWallpaperCard(ui: ui, height: heroH)
-                        RecentRow(ui: ui)
+                        CurrentWallpaperCard(state: state, vm: vm, onApply: onApply, height: heroH)
+                        RecentRow(state: state, items: items)
                     }
                     .frame(width: leftW)
 
                     // RIGHT column — widgets panel, Quick Actions below.
                     VStack(spacing: DS.gap) {
-                        WidgetsPanel(ui: ui)
-                        QuickActions(ui: ui)
+                        WidgetsPanel(state: state, vm: vm, rotation: rotation)
+                        QuickActions(state: state, vm: vm, rotation: rotation, items: items, onApply: onApply)
                     }
                     .frame(width: rail)
                 }
@@ -870,7 +1101,9 @@ private struct HomePage: View {
 /// The hero: "Current Wallpaper" title, a big 16:9 preview, badges, name/type,
 /// and the three actions.
 private struct CurrentWallpaperCard: View {
-    let ui: LiveWallUI
+    @ObservedObject var state: UIState
+    @ObservedObject var vm: WallpaperViewModel
+    var onApply: (LibraryItem, Bool) -> Void
     let height: CGFloat
 
     var body: some View {
@@ -878,11 +1111,15 @@ private struct CurrentWallpaperCard: View {
             Text("Current Wallpaper")
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(DS.ink)
 
-            if let item = ui.currentItem {
+            if let item = state.current {
+                Color.clear
+                    .frame(height: height)
+                    .frame(maxWidth: .infinity)
+                    .overlay {
                 ZStack {
                     Color.black
                     PosterView(item: item)
-                    LoopingVideoView(url: heroPlayableURL(item))
+                    LoopingVideoView(url: previewURL(for: item, vm: vm))
                     LinearGradient(colors: [.black.opacity(0.3), .clear, .clear, .black.opacity(0.78)],
                                    startPoint: .top, endPoint: .bottom)
 
@@ -907,23 +1144,20 @@ private struct CurrentWallpaperCard: View {
                         }
                         Spacer(minLength: 0)
                         HStack(spacing: 8) {
-                            Button("Preview") { ui.open(item) }
+                            Button("Preview") { state.open(item) }
                                 .buttonStyle(DSGlassButton(onArt: true))
-                            Button("Set Wallpaper") {
-                                ui.viewModel.apply(item, to: ui.primaryDisplay)
-                                ui.setCurrent(item)
-                            }.buttonStyle(DSGlassButton(onArt: true))
-                            Button("Apply") {
-                                ui.viewModel.apply(item)
-                                ui.setCurrent(item)
-                            }.buttonStyle(DSPrimaryButton())
+                            Button("Set Wallpaper") { onApply(item, true) }
+                                .buttonStyle(DSGlassButton(onArt: true))
+                            Button("Apply") { onApply(item, false) }
+                                .buttonStyle(DSPrimaryButton())
                         }
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+
+                    WallpaperKeyOverlay(item: item)
                 }
-                .frame(height: height)
-                .frame(maxWidth: .infinity)
+                    }
                 .clipShape(RoundedRectangle(cornerRadius: DS.rCard, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DS.rCard, style: .continuous).strokeBorder(DS.hairline))
                 .shadow(color: .black.opacity(0.14), radius: 20, y: 8)
@@ -931,7 +1165,7 @@ private struct CurrentWallpaperCard: View {
                 VStack(spacing: 10) {
                     Image(systemName: "sparkles.tv").font(.system(size: 40)).foregroundStyle(DS.ink3)
                     Text("No wallpaper yet").font(.system(size: 16, weight: .semibold)).foregroundStyle(DS.ink)
-                    Button("Add a wallpaper") { ui.viewModel.showAdd = true }.buttonStyle(DSPrimaryButton())
+                    Button("Add a wallpaper") { vm.showAdd = true }.buttonStyle(DSPrimaryButton())
                 }
                 .frame(maxWidth: .infinity).frame(height: height)
                 .glass()
@@ -947,22 +1181,23 @@ private struct CurrentWallpaperCard: View {
 
 /// Bottom-left: a horizontal thumbnail row.
 private struct RecentRow: View {
-    let ui: LiveWallUI
+    @ObservedObject var state: UIState
+    let items: [LibraryItem]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(text: "Recent Wallpapers", trailing: AnyView(
-                Button("View All") { ui.goTo(.wallpapers) }
+                Button("View All") { state.go(.wallpapers) }
                     .buttonStyle(.plain)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(DS.blue)
             ))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 11) {
-                    ForEach(Array(ui.everything.prefix(10))) { item in
+                    ForEach(Array(items.prefix(10))) { item in
                         RecentThumb(item: item,
-                                    isCurrent: ui.currentItem?.id == item.id,
-                                    onTap: { ui.open(item) })
+                                    isCurrent: state.current?.id == item.id,
+                                    onTap: { state.open(item) })
                     }
                 }
                 .padding(.vertical, 3).padding(.horizontal, 1)
@@ -1012,12 +1247,14 @@ private struct RecentThumb: View {
 
 /// Right panel: compact widget previews — Clock, Weather, Music, App Launcher.
 private struct WidgetsPanel: View {
-    let ui: LiveWallUI
+    @ObservedObject var state: UIState
+    @ObservedObject var vm: WallpaperViewModel
+    @ObservedObject var rotation: RotationEngine
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
             SectionTitle(text: "Widgets", trailing: AnyView(
-                Button { ui.goTo(.widgets) } label: {
+                Button { state.go(.widgets) } label: {
                     Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(DS.ink3)
                 }.buttonStyle(.plain)
@@ -1025,9 +1262,9 @@ private struct WidgetsPanel: View {
 
             HStack(spacing: 10) {
                 ClockWidget()
-                WeatherWidget()
+                SystemWidget()
             }
-            MusicWidget()
+            WallpaperStatusWidget(state: state, vm: vm, rotation: rotation)
             LauncherWidget()
         }
         .padding(DS.gap)
@@ -1071,19 +1308,25 @@ private struct ClockWidget: View {
     }
 }
 
-private struct WeatherWidget: View {
+/// Real machine state — battery and display — instead of invented weather.
+private struct SystemWidget: View {
+    @State private var battery: Int?
+    @State private var charging = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
+            MicroLabel(text: "System")
             HStack(spacing: 6) {
-                Image(systemName: "cloud.sun.fill")
-                    .font(.system(size: 19))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, Color(red: 1, green: 0.84, blue: 0.4))
-                Spacer(minLength: 0)
+                Image(systemName: batteryIcon)
+                    .font(.system(size: 17)).foregroundStyle(.white)
+                Text(battery.map { "\($0)%" } ?? "—")
+                    .font(.system(size: 21, weight: .semibold)).foregroundStyle(.white)
+                    .monospacedDigit()
             }
-            Text("24°").font(.system(size: 26, weight: .semibold)).foregroundStyle(.white)
-            Text("Partly Cloudy").font(.system(size: 11)).foregroundStyle(.white.opacity(0.85))
-            Text("H: 26°  L: 16°").font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
+            Text(charging ? "Charging" : "On battery")
+                .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.85))
+            Text(displayLine)
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1091,29 +1334,76 @@ private struct WeatherWidget: View {
             LinearGradient(colors: [Color(red: 0.29, green: 0.56, blue: 0.89), DS.purple],
                            startPoint: .topLeading, endPoint: .bottomTrailing),
             in: RoundedRectangle(cornerRadius: DS.rTile, style: .continuous))
-        .help("Sample weather widget — connect a weather source in Settings")
+        .onAppear(perform: refresh)
+    }
+
+    private var batteryIcon: String {
+        guard let b = battery else { return "bolt.slash" }
+        if charging { return "battery.100.bolt" }
+        switch b {
+        case ..<20:  return "battery.25"
+        case ..<60:  return "battery.50"
+        default:     return "battery.100"
+        }
+    }
+    private var displayLine: String {
+        guard let screen = NSScreen.main else { return "" }
+        let w = Int(screen.frame.width * screen.backingScaleFactor)
+        let h = Int(screen.frame.height * screen.backingScaleFactor)
+        return "\(w)×\(h) · \(NSScreen.screens.count) display\(NSScreen.screens.count == 1 ? "" : "s")"
+    }
+
+    /// Reads the real battery level from IOKit via pmset — no invented numbers.
+    private func refresh() {
+        DispatchQueue.global(qos: .utility).async {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+            task.arguments = ["-g", "batt"]
+            let pipe = Pipe(); task.standardOutput = pipe
+            guard (try? task.run()) != nil else { return }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            let out = String(data: data, encoding: .utf8) ?? ""
+            let pct = out.split(separator: "\t").last.flatMap { chunk -> Int? in
+                let digits = chunk.prefix { $0.isNumber }
+                return Int(digits)
+            }
+            let isCharging = out.contains("AC Power") || out.contains("charging")
+            DispatchQueue.main.async { battery = pct; charging = isCharging }
+        }
     }
 }
 
-private struct MusicWidget: View {
-    @State private var playing = false
+/// What LiveWall is actually doing right now.
+private struct WallpaperStatusWidget: View {
+    @ObservedObject var state: UIState
+    @ObservedObject var vm: WallpaperViewModel
+    @ObservedObject var rotation: RotationEngine
+
     var body: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(LinearGradient(colors: [DS.purple, Color(red: 0.85, green: 0.24, blue: 0.55)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 40, height: 40)
-                .overlay(Image(systemName: "music.note").font(.system(size: 15)).foregroundStyle(.white))
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(vm.isRunning ? AnyShapeStyle(DS.accent) : AnyShapeStyle(DS.divider))
+                    .frame(width: 40, height: 40)
+                Image(systemName: vm.isRunning ? (vm.isPaused ? "pause.fill" : "play.fill") : "moon.zzz.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(vm.isRunning ? .white : DS.ink3)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text("Sunset Drive").font(.system(size: 12, weight: .semibold))
+                Text(vm.runningItem?.title.components(separatedBy: " · ").last
+                     ?? (vm.isRunning ? "Live wallpaper" : "Nothing running"))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DS.ink).lineLimit(1)
-                Text("Ooyy").font(.system(size: 10.5)).foregroundStyle(DS.ink2)
+                Text(rotation.isRunning ? "Auto change on" : (vm.isPaused ? "Paused" : (vm.isRunning ? "Playing" : "Pick a wallpaper to start")))
+                    .font(.system(size: 10.5)).foregroundStyle(DS.ink2)
                 HStack(spacing: 12) {
-                    Image(systemName: "backward.fill")
-                    Button { playing.toggle() } label: {
-                        Image(systemName: playing ? "pause.fill" : "play.fill")
-                    }.buttonStyle(.plain)
-                    Image(systemName: "forward.fill")
+                    Button { vm.togglePlay() } label: {
+                        Image(systemName: vm.showAsPlaying ? "pause.fill" : "play.fill")
+                    }.buttonStyle(.plain).disabled(!vm.canTogglePlay)
+                    Button { vm.stop(); state.say("Wallpaper stopped") } label: {
+                        Image(systemName: "stop.fill")
+                    }.buttonStyle(.plain).disabled(!vm.isRunning)
                 }
                 .font(.system(size: 10)).foregroundStyle(DS.ink2).padding(.top, 3)
             }
@@ -1157,29 +1447,30 @@ private struct LauncherWidget: View {
 
 /// Bottom-right: a 2×2 grid.
 private struct QuickActions: View {
-    let ui: LiveWallUI
-    @ObservedObject private var keys = KeyVault.shared
+    @ObservedObject var state: UIState
+    @ObservedObject var vm: WallpaperViewModel
+    @ObservedObject var rotation: RotationEngine
+    let items: [LibraryItem]
+    var onApply: (LibraryItem, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
             SectionTitle(text: "Quick Actions")
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
                 tile("shuffle", "Shuffle Wallpaper", "Random from library") {
-                    if let pick = ui.everything.randomElement() {
-                        ui.viewModel.apply(pick); ui.setCurrent(pick)
-                    }
+                    if let pick = items.randomElement() { onApply(pick, false) }
                 }
                 tile("clock.arrow.2.circlepath",
-                     ui.rotationEngine.isRunning ? "Stop Auto" : "Auto Change",
-                     ui.rotationEngine.isRunning ? "Rotation on" : "Rotate on a timer") {
-                    if ui.rotationEngine.isRunning { ui.rotationEngine.stop() }
-                    else { ui.rotationEngine.start(pool: ui.everything) }
+                     rotation.isRunning ? "Stop Auto" : "Auto Change",
+                     rotation.isRunning ? "Rotation on" : "Rotate on a timer") {
+                    if rotation.isRunning { rotation.stop(); state.say("Auto change off") }
+                    else { rotation.start(pool: items); state.say("Auto change on") }
                 }
                 tile("square.and.arrow.down", "Import Wallpaper", "From Mac or URL") {
-                    ui.viewModel.showAdd = true
+                    vm.showAdd = true
                 }
                 tile("square.stack.3d.up", "Create Setup", "Save your layout") {
-                    ui.goTo(.setups)
+                    state.go(.setups)
                 }
             }
         }
@@ -1217,7 +1508,7 @@ private struct WallpaperDetail: View {
     let displayID: CGDirectDisplayID
     let isFavorite: Bool
     var onFavorite: () -> Void
-    var onApplied: () -> Void
+    var onApplied: (Bool) -> Void   // (thisDisplayOnly)
     var onClose: () -> Void
 
     @State private var scaling: ScalingMode = .fill
@@ -1236,25 +1527,30 @@ private struct WallpaperDetail: View {
                     Image(systemName: isFavorite ? "heart.fill" : "heart")
                         .foregroundStyle(isFavorite ? Color(red: 1, green: 0.42, blue: 0.5) : DS.ink2)
                 }.buttonStyle(DSGlassButton())
-                Button("Apply Wallpaper") { vm.apply(item); onApplied(); onClose() }
+                Button("Apply Wallpaper") { onApplied(false); onClose() }
                     .buttonStyle(DSPrimaryButton())
             }
             .padding(DS.gap)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.gap) {
+                    Color.clear
+                        .aspectRatio(16.0/9.0, contentMode: .fit)
+                        .overlay {
                     ZStack {
                         Color.black
                         PosterView(item: item)
-                        LoopingVideoView(url: heroPlayableURL(item))
+                        LoopingVideoView(url: previewURL(for: item, vm: vm))
                         HStack(spacing: 6) {
                             if item.kind != .localImage { ArtBadge(text: "LIVE", dot: true) }
                             ArtBadge(text: resolutionLabel(item))
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+                        WallpaperKeyOverlay(item: item)
                     }
-                    .aspectRatio(16.0/9.0, contentMode: .fit)
+                        }
                     .clipShape(RoundedRectangle(cornerRadius: DS.rCard, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: DS.rCard, style: .continuous).strokeBorder(DS.hairline))
 
@@ -1295,9 +1591,9 @@ private struct WallpaperDetail: View {
                     .glass()
 
                     HStack(spacing: 9) {
-                        Button("Set on This Display") { vm.apply(item, to: displayID); onApplied() }
+                        Button("Set on This Display") { onApplied(true) }
                             .buttonStyle(DSGlassButton())
-                        Button("Apply to All Displays") { vm.apply(item); onApplied() }
+                        Button("Apply to All Displays") { onApplied(false) }
                             .buttonStyle(DSGlassButton())
                         Spacer()
                     }
@@ -1323,7 +1619,9 @@ private struct WallpaperDetail: View {
 // MARK: - Discover
 
 private struct DiscoverPage: View {
-    let ui: LiveWallUI
+    @ObservedObject var state: UIState
+    @ObservedObject var vm: WallpaperViewModel
+    var onApply: (LibraryItem, Bool) -> Void
     @State private var tab = "Trending"
     private let tabs = ["Trending", "Popular", "New", "Staff Picks"]
 
@@ -1356,11 +1654,11 @@ private struct DiscoverPage: View {
                           spacing: DS.gap) {
                     ForEach(items) { item in
                         WallTile(item: item,
-                                 favorite: ui.isFavorite(item),
-                                 running: ui.viewModel.runningItemID == item.id,
-                                 onOpen: { ui.open(item) },
-                                 onApply: { ui.viewModel.apply(item); ui.setCurrent(item) },
-                                 onFavorite: { ui.toggleFavorite(item) })
+                                 favorite: state.isFavorite(item),
+                                 running: vm.runningItemID == item.id,
+                                 onOpen: { state.open(item) },
+                                 onApply: { onApply(item, false) },
+                                 onFavorite: { state.toggleFavorite(item) })
                     }
                 }
             }
@@ -1370,7 +1668,7 @@ private struct DiscoverPage: View {
 
     /// Different slices of the catalog per tab — stable, not random per redraw.
     private var items: [LibraryItem] {
-        let all = ui.viewModel.templates
+        let all = vm.templates
         guard !all.isEmpty else { return [] }
         switch tab {
         case "Popular":     return Array(all.dropFirst(6).prefix(24))
@@ -1403,69 +1701,473 @@ private struct WidgetsPage: View {
 
 // MARK: - My Setups
 
-private struct SetupsPage: View {
-    let ui: LiveWallUI
-    @AppStorage("liveWallActiveSetup") private var active = ""
+/// A saved desktop setup: a name, a look, and the wallpaper it restores.
+struct LiveWallSetup: Identifiable, Codable, Hashable {
+    var id = UUID()
+    var name: String
+    var icon: String = "square.stack.3d.up.fill"
+    /// Index into `LiveWallSetup.palettes`.
+    var palette: Int = 0
+    /// A user-chosen cover photo, copied into Application Support.
+    var imagePath: String?
+    /// The wallpaper this setup applies, by title (stable across catalog reloads).
+    var wallpaperTitle: String?
 
-    private struct Setup: Identifiable {
-        let id = UUID(); let name: String; let icon: String; let tint: [Color]
+    static let palettes: [[Color]] = [
+        [DS.blue, DS.purple],
+        [Color(red: 0.85, green: 0.20, blue: 0.55), DS.purple],
+        [Color(red: 0.16, green: 0.60, blue: 0.45), DS.blue],
+        [Color(red: 0.55, green: 0.56, blue: 0.62), Color(red: 0.32, green: 0.33, blue: 0.38)],
+        [Color(red: 0.13, green: 0.12, blue: 0.30), DS.purple],
+        [Color(red: 0.95, green: 0.55, blue: 0.20), Color(red: 0.85, green: 0.25, blue: 0.30)]
+    ]
+    var colors: [Color] { Self.palettes[min(max(palette, 0), Self.palettes.count - 1)] }
+    var image: NSImage? {
+        guard let imagePath else { return nil }
+        return NSImage(contentsOfFile: imagePath)
     }
-    private var setups: [Setup] {
-        [ .init(name: "Work",    icon: "briefcase.fill",     tint: [DS.blue, DS.purple]),
-          .init(name: "Gaming",  icon: "gamecontroller.fill",tint: [Color(red:0.85,green:0.2,blue:0.55), DS.purple]),
-          .init(name: "School",  icon: "book.fill",          tint: [Color(red:0.16,green:0.6,blue:0.45), DS.blue]),
-          .init(name: "Minimal", icon: "circle.dashed",      tint: [Color(red:0.55,green:0.56,blue:0.62), Color(red:0.32,green:0.33,blue:0.38)]),
-          .init(name: "Night",   icon: "moon.stars.fill",    tint: [Color(red:0.13,green:0.12,blue:0.3), DS.purple]) ]
+}
+
+/// Stores setups on disk so they survive relaunch.
+@MainActor
+final class SetupStore: ObservableObject {
+    @Published private(set) var setups: [LiveWallSetup] = []
+    @Published var activeID: UUID?
+
+    private let file: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LiveWall", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("setups.json")
+    }()
+    var coversDirectory: URL {
+        let dir = file.deletingLastPathComponent().appendingPathComponent("SetupCovers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    init() {
+        if let data = try? Data(contentsOf: file),
+           let saved = try? JSONDecoder().decode([LiveWallSetup].self, from: data), !saved.isEmpty {
+            setups = saved
+        } else {
+            setups = [
+                .init(name: "Work",    icon: "briefcase.fill",      palette: 0),
+                .init(name: "Gaming",  icon: "gamecontroller.fill", palette: 1),
+                .init(name: "School",  icon: "book.fill",           palette: 2),
+                .init(name: "Minimal", icon: "circle.dashed",       palette: 3),
+                .init(name: "Night",   icon: "moon.stars.fill",     palette: 4)
+            ]
+            save()
+        }
+        if let raw = UserDefaults.standard.string(forKey: "liveWallActiveSetupID") {
+            activeID = UUID(uuidString: raw)
+        }
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(setups) { try? data.write(to: file) }
+    }
+
+    func add(_ setup: LiveWallSetup) { setups.append(setup); save() }
+    func update(_ setup: LiveWallSetup) {
+        guard let i = setups.firstIndex(where: { $0.id == setup.id }) else { return }
+        setups[i] = setup; save()
+    }
+    func delete(_ setup: LiveWallSetup) {
+        setups.removeAll { $0.id == setup.id }
+        if activeID == setup.id { activeID = nil }
+        save()
+    }
+    func setActive(_ setup: LiveWallSetup) {
+        activeID = setup.id
+        UserDefaults.standard.set(setup.id.uuidString, forKey: "liveWallActiveSetupID")
+    }
+
+    /// Copies a chosen photo into our own storage so the setup keeps working
+    /// even if the original file moves.
+    func storeCover(_ source: URL) -> String? {
+        let dest = coversDirectory.appendingPathComponent(UUID().uuidString + "." + (source.pathExtension.isEmpty ? "png" : source.pathExtension))
+        do {
+            try FileManager.default.copyItem(at: source, to: dest)
+            return dest.path
+        } catch { return nil }
+    }
+}
+
+private struct SetupsPage: View {
+    @ObservedObject var state: UIState
+    @ObservedObject var store: SetupStore
+    let items: [LibraryItem]
+    var onApply: (LibraryItem, Bool) -> Void
+
+    @State private var editing: LiveWallSetup?
+    @State private var showEditor = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DS.gap) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("My Setups").font(.system(size: 26, weight: .bold)).foregroundStyle(DS.ink)
+                        Text("A setup remembers a wallpaper and a look. Switch with one click.")
+                            .font(.system(size: 12.5)).foregroundStyle(DS.ink2)
+                    }
+                    Spacer()
+                    Button {
+                        editing = LiveWallSetup(name: "New Setup")
+                        showEditor = true
+                    } label: {
+                        Label("New Setup", systemImage: "plus")
+                    }.buttonStyle(DSPrimaryButton())
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 236, maximum: 330), spacing: DS.gap)],
+                          spacing: DS.gap) {
+                    ForEach(store.setups) { s in
+                        setupCard(s)
+                    }
+                }
+            }
+            .padding(DS.pad)
+        }
+        .sheet(isPresented: $showEditor) {
+            if let setup = editing {
+                SetupEditor(setup: setup, store: store, items: items) { saved, isNew in
+                    if isNew { store.add(saved) } else { store.update(saved) }
+                    state.say(isNew ? "Setup created" : "Setup saved")
+                    showEditor = false
+                } onCancel: { showEditor = false }
+            }
+        }
+    }
+
+    private func setupCard(_ s: LiveWallSetup) -> some View {
+        let active = store.activeID == s.id
+        return VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                if let img = s.image {
+                    Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    LinearGradient(colors: s.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Image(systemName: s.icon).font(.system(size: 30)).foregroundStyle(.white.opacity(0.9))
+                }
+                if active {
+                    ArtBadge(text: "ACTIVE", dot: true)
+                        .padding(9)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+                // Edit / delete on the card itself
+                HStack(spacing: 6) {
+                    Button { editing = s; showEditor = true } label: {
+                        Image(systemName: "pencil").font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white).frame(width: 24, height: 24)
+                            .background(.black.opacity(0.4), in: Circle())
+                    }.buttonStyle(.plain).help("Edit setup")
+                    Button { store.delete(s); state.say("Setup deleted") } label: {
+                        Image(systemName: "trash").font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white).frame(width: 24, height: 24)
+                            .background(.black.opacity(0.4), in: Circle())
+                    }.buttonStyle(.plain).help("Delete setup")
+                }
+                .padding(9)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
+            .aspectRatio(16.0/9.0, contentMode: .fit)
+            .clipped()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(s.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.ink)
+                    Text(s.wallpaperTitle.map { shortTitle($0) } ?? (active ? "Current setup" : "No wallpaper set"))
+                        .font(.system(size: 11)).foregroundStyle(DS.ink2).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: active ? "checkmark.circle.fill" : "arrow.right.circle")
+                    .foregroundStyle(active ? DS.blue : DS.ink3)
+            }
+            .padding(11)
+            .contentShape(Rectangle())
+            .onTapGesture { activate(s) }
+        }
+        .glass(DS.rTile)
+    }
+
+    private func shortTitle(_ t: String) -> String {
+        t.components(separatedBy: " · ").last ?? t
+    }
+
+    private func activate(_ s: LiveWallSetup) {
+        store.setActive(s)
+        if let title = s.wallpaperTitle, let match = items.first(where: { $0.title == title }) {
+            onApply(match, false)
+        }
+        state.say("Switched to \u{201C}\(s.name)\u{201D}")
+    }
+}
+
+/// Create / edit a setup: name, icon, colour, cover photo, and the wallpaper it
+/// restores.
+private struct SetupEditor: View {
+    @State var setup: LiveWallSetup
+    @ObservedObject var store: SetupStore
+    let items: [LibraryItem]
+    var onSave: (LiveWallSetup, Bool) -> Void
+    var onCancel: () -> Void
+
+    @State private var isNew: Bool = false
+    @State private var search = ""
+
+    private let icons = ["square.stack.3d.up.fill", "briefcase.fill", "gamecontroller.fill",
+                         "book.fill", "circle.dashed", "moon.stars.fill", "sun.max.fill",
+                         "music.note", "paintbrush.fill", "bolt.fill", "leaf.fill", "star.fill"]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Cancel", action: onCancel).buttonStyle(DSGlassButton())
+                Spacer()
+                Text(isNew ? "New Setup" : "Edit Setup")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.ink)
+                Spacer()
+                Button("Save") { onSave(setup, isNew) }
+                    .buttonStyle(DSPrimaryButton())
+                    .disabled(setup.name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(DS.gap)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: DS.gap) {
+                    // Live preview of the cover
+                    ZStack {
+                        if let img = setup.image {
+                            Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            LinearGradient(colors: setup.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                            Image(systemName: setup.icon).font(.system(size: 40)).foregroundStyle(.white.opacity(0.9))
+                        }
+                    }
+                    .frame(height: 170).frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.rTile, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DS.rTile, style: .continuous).strokeBorder(DS.hairline))
+
+                    HStack(spacing: 9) {
+                        Button("Choose Photo…") { pickPhoto() }.buttonStyle(DSGlassButton())
+                        if setup.imagePath != nil {
+                            Button("Remove Photo") { setup.imagePath = nil }.buttonStyle(DSGlassButton())
+                        }
+                        Spacer()
+                    }
+
+                    field("Name") {
+                        TextField("Setup name", text: $setup.name)
+                            .textFieldStyle(.plain).font(.system(size: 13))
+                            .padding(.horizontal, 11).frame(height: 30)
+                            .glass(DS.rCtl, strong: true)
+                            .frame(width: 240)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Icon").font(.system(size: 12.5, weight: .medium)).foregroundStyle(DS.ink)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 42), spacing: 8)], spacing: 8) {
+                            ForEach(icons, id: \.self) { i in
+                                Button { setup.icon = i } label: {
+                                    Image(systemName: i).font(.system(size: 14))
+                                        .foregroundStyle(setup.icon == i ? .white : DS.ink2)
+                                        .frame(width: 40, height: 34)
+                                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .fill(setup.icon == i ? AnyShapeStyle(DS.blue) : AnyShapeStyle(DS.raised)))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Colour").font(.system(size: 12.5, weight: .medium)).foregroundStyle(DS.ink)
+                        HStack(spacing: 9) {
+                            ForEach(0..<LiveWallSetup.palettes.count, id: \.self) { i in
+                                Button { setup.palette = i } label: {
+                                    LinearGradient(colors: LiveWallSetup.palettes[i],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                        .frame(width: 44, height: 30)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .strokeBorder(setup.palette == i ? DS.blue : DS.hairline,
+                                                          lineWidth: setup.palette == i ? 2 : 1))
+                                }.buttonStyle(.plain)
+                            }
+                            Spacer()
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Wallpaper").font(.system(size: 12.5, weight: .medium)).foregroundStyle(DS.ink)
+                        Text(setup.wallpaperTitle ?? "None selected — this setup won't change your wallpaper.")
+                            .font(.system(size: 11.5)).foregroundStyle(DS.ink2).lineLimit(1)
+                        HStack(spacing: 7) {
+                            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(DS.ink3)
+                            TextField("Search wallpapers", text: $search)
+                                .textFieldStyle(.plain).font(.system(size: 12))
+                        }
+                        .padding(.horizontal, 10).frame(height: 28)
+                        .glass(DS.rCtl, strong: true)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 9) {
+                                ForEach(matches) { item in
+                                    Button { setup.wallpaperTitle = item.title } label: {
+                                        VStack(spacing: 5) {
+                                            PosterView(item: item)
+                                                .frame(width: 108, height: 61)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                    .strokeBorder(setup.wallpaperTitle == item.title ? DS.blue : DS.hairline,
+                                                                  lineWidth: setup.wallpaperTitle == item.title ? 2 : 1))
+                                            Text(item.title.components(separatedBy: " · ").last ?? item.title)
+                                                .font(.system(size: 10)).foregroundStyle(DS.ink2)
+                                                .lineLimit(1).frame(width: 108)
+                                        }
+                                    }.buttonStyle(.plain)
+                                }
+                            }.padding(.vertical, 2)
+                        }
+                        .frame(height: 92)
+                    }
+                }
+                .padding(DS.pad).padding(.top, 0)
+            }
+        }
+        .frame(width: 640, height: 660)
+        .background(DS.canvas)
+        .onAppear { isNew = !store.setups.contains { $0.id == setup.id } }
+    }
+
+    private var matches: [LibraryItem] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        let base = q.isEmpty ? items : items.filter { $0.title.lowercased().contains(q) }
+        return Array(base.prefix(40))
+    }
+
+    private func field<C: View>(_ label: String, @ViewBuilder control: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(label).font(.system(size: 12.5, weight: .medium)).foregroundStyle(DS.ink)
+            control()
+        }
+    }
+
+    private func pickPhoto() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if panel.runModal() == .OK, let url = panel.url, let stored = store.storeCover(url) {
+            setup.imagePath = stored
+        }
+    }
+}
+
+// MARK: - Keys
+
+/// The key hunt, with progress and encouragement — but never a clue as to where
+/// a key actually is.
+private struct KeysPage: View {
+    @ObservedObject var state: UIState
+    @ObservedObject private var keys = KeyVault.shared
+
+    private var found: Int { keys.count }
+    private var total: Int { KeyVault.total }
+    private var remaining: Int { max(total - found, 0) }
+
+    /// Pure encouragement, keyed off how many are left. No hints, ever.
+    private var hype: (String, String) {
+        if keys.isUnlocked { return ("🎮", "ALL KEYS FOUND — GAMES ARE YOURS!") }
+        switch remaining {
+        case 1:      return ("🔥", "SOOO CLOSEEE — ONE KEY LEFT!!")
+        case 2:      return ("😤", "TWO LEFT! YOU'RE SO TUNG TUNG BAD!")
+        case 3...4:  return ("👀", "GETTING SPICY — ALMOST THERE!")
+        case 5...7:  return ("💪", "HALFWAY-ISH. KEEP SWEEPING!")
+        case 8...11: return ("🧐", "GOOD START — PLENTY MORE HIDING.")
+        default:     return ("🕵️", "THE HUNT BEGINS. GO FIND THEM.")
+        }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.gap) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("My Setups").font(.system(size: 26, weight: .bold)).foregroundStyle(DS.ink)
-                    Text("A setup remembers your wallpaper and its settings. Switch with one click.")
+                    Text("Keys").font(.system(size: 26, weight: .bold)).foregroundStyle(DS.ink)
+                    Text("Find every hidden key to unlock Games. No clues — that's the point.")
                         .font(.system(size: 12.5)).foregroundStyle(DS.ink2)
                 }
 
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 236, maximum: 330), spacing: DS.gap)],
-                          spacing: DS.gap) {
-                    ForEach(setups) { s in
-                        Button {
-                            active = s.name
-                            if let pick = ui.everything.randomElement() {
-                                ui.viewModel.apply(pick); ui.setCurrent(pick)
-                            }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 0) {
-                                ZStack {
-                                    LinearGradient(colors: s.tint, startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    Image(systemName: s.icon).font(.system(size: 30))
-                                        .foregroundStyle(.white.opacity(0.9))
-                                    if active == s.name {
-                                        ArtBadge(text: "ACTIVE", dot: true)
-                                            .padding(9)
-                                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                    }
-                                }
-                                .aspectRatio(16.0/9.0, contentMode: .fit)
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(s.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(DS.ink)
-                                        Text(active == s.name ? "Current setup" : "Tap to switch")
-                                            .font(.system(size: 11)).foregroundStyle(DS.ink2)
-                                    }
-                                    Spacer()
-                                    Image(systemName: active == s.name ? "checkmark.circle.fill" : "arrow.right.circle")
-                                        .foregroundStyle(active == s.name ? DS.blue : DS.ink3)
-                                }
-                                .padding(11)
-                            }
-                            .glass(DS.rTile)
-                        }.buttonStyle(.plain)
+                // Big score card
+                VStack(spacing: 14) {
+                    Text(hype.0).font(.system(size: 52))
+                    Text("You have found")
+                        .font(.system(size: 13)).foregroundStyle(DS.ink2)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(found)")
+                            .font(.system(size: 62, weight: .bold, design: .rounded))
+                            .foregroundStyle(DS.blue)
+                        Text("/ \(total) keys")
+                            .font(.system(size: 18, weight: .semibold)).foregroundStyle(DS.ink2)
+                    }
+                    Text(hype.1)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(keys.isUnlocked ? DS.live : DS.ink)
+                        .multilineTextAlignment(.center)
+
+                    // Progress bar
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(DS.divider)
+                            Capsule().fill(DS.accent)
+                                .frame(width: g.size.width * CGFloat(found) / CGFloat(max(total, 1)))
+                        }
+                    }
+                    .frame(height: 10).frame(maxWidth: 420)
+
+                    // Pips
+                    HStack(spacing: 6) {
+                        ForEach(0..<total, id: \.self) { i in
+                            Image(systemName: i < found ? "key.fill" : "key")
+                                .font(.system(size: 13))
+                                .foregroundStyle(i < found ? Color.yellow : DS.ink3.opacity(0.5))
+                        }
+                    }
+                    .padding(.top, 2)
+
+                    if !keys.isUnlocked {
+                        Text("\(remaining) still hidden")
+                            .font(.system(size: 12)).foregroundStyle(DS.ink3)
                     }
                 }
+                .padding(26)
+                .frame(maxWidth: .infinity)
+                .glass()
+
+                // Rules — deliberately no locations
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("How it works").font(.system(size: 15, weight: .semibold)).foregroundStyle(DS.ink)
+                    rule("key.fill", "Keys are hidden on wallpaper pages. Open wallpapers and look around.")
+                    rule("eye.slash", "No clues and no locations are given. Some are small and easy to miss.")
+                    rule("hand.tap", "Click a key to collect it. A collected key never comes back.")
+                    rule("gamecontroller.fill", "Collect all \(total) and the Games section unlocks for good.")
+                }
+                .padding(DS.gap)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glass()
             }
             .padding(DS.pad)
+        }
+    }
+
+    private func rule(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon).font(.system(size: 12)).foregroundStyle(DS.blue).frame(width: 18)
+            Text(text).font(.system(size: 12.5)).foregroundStyle(DS.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
     }
 }

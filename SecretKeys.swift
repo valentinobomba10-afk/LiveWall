@@ -34,13 +34,47 @@ final class KeyVault: ObservableObject {
         "MotionBGS · Mist Over the Pines",
         "MotionBGS · Night Sky",
         "MotionBGS · Cosmic Mountain OLED",
-        // Hard five — obscure placement, dim, no pulse.
+        // Hard five — obscure placement, dim, no pulse. Slot 10 is the Goku
+        // key: it hunts the live catalog for a Goku wallpaper and only falls
+        // back to this pinned title if the catalog has none, so the key is
+        // always reachable either way.
         "MotionBGS · Sunset Samurai  Blade Duel",
-        "MotionBGS · Cyber Streets Reign",
-        "MotionBGS · The Witchers Path",
-        "MotionBGS · Ghost of Night City",
-        "MotionBGS · Neon Infused Iron Man",
+        "MotionBGS · Stormlight Over Fields",
+        "MotionBGS · Beneath the Forgotten Arc",
+        "MotionBGS · Midnight Fuel Stop",
+        "MotionBGS · Silent Blade of the Forest",
     ]
+
+    /// The Goku key (hard slot 10). It prefers any wallpaper whose title
+    /// mentions Goku — "Goku the Saiyan Hero" and friends live in the Anime
+    /// category once the catalog loads.
+    static let gokuKeyword = "goku"
+    static var gokuSlot: Int { total - hardKeyCount }        // 10
+
+    /// The catalog title the Goku key is currently attached to. The UI refreshes
+    /// this whenever the catalog changes; nil means "use the pinned fallback".
+    @Published private(set) var gokuTitle: String?
+
+    /// Points the Goku key at the first Goku wallpaper in the catalog, sorted so
+    /// the choice is stable between launches.
+    func refreshGokuTarget(from titles: [String]) {
+        let hit = titles
+            .filter { $0.lowercased().contains(Self.gokuKeyword) }
+            .sorted()
+            .first
+        if hit != gokuTitle { gokuTitle = hit }
+    }
+
+    /// Which key (if any) a wallpaper carries, and whether it is a hard one.
+    func slot(forTitle title: String) -> Int? {
+        // The Goku key wins over its pinned fallback whenever a Goku wallpaper
+        // is present in the catalog.
+        if let goku = gokuTitle {
+            if title == goku { return Self.gokuSlot }
+            if title == Self.keyedWallpaperTitles[Self.gokuSlot] { return nil }
+        }
+        return Self.keyedWallpaperTitles.firstIndex(of: title)
+    }
 
     /// The last N keyed wallpapers are the hard ones.
     static let hardKeyCount = 5

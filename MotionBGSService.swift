@@ -9,8 +9,14 @@ enum MotionBGSService {
     // category gives a broad catalog quickly; the view model can request the
     // next page without making startup wait for the whole site.
     static let categorySlugs = [
+        // Original set
         "anime", "games", "superhero", "nature", "car", "tv", "holiday",
-        "animal", "fantasy", "space", "horror", "technology", "football", "japan"
+        "animal", "fantasy", "space", "horror", "technology", "football", "japan",
+        // Broader coverage. A tag the site does not have simply returns nothing,
+        // so an unknown slug costs one failed request and never breaks loading.
+        "abstract", "city", "minecraft", "music", "movie", "aesthetic",
+        "dark", "neon", "sport", "flower", "sky", "ocean", "winter", "sunset",
+        "girl", "cyberpunk", "forest", "mountain", "water", "art"
     ]
 
     static func fetchPage(category: String, page: Int) async throws -> [LibraryItem] {
@@ -34,6 +40,10 @@ enum MotionBGSService {
         case "tv":        return "TV & Film"
         case "animal":    return "Animals"
         case "game", "games": return "Games"
+        case "girl":      return "Characters"
+        case "movie":     return "TV & Film"
+        case "sport":     return "Sports"
+        case "art":       return "Abstract"
         default:          return slug.prefix(1).uppercased() + slug.dropFirst()
         }
     }

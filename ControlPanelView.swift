@@ -66,10 +66,16 @@ final class WallpaperViewModel: ObservableObject {
     @Published private(set) var motionBGSLoading = false
     @Published private(set) var motionBGSPage = 1
     @Published private(set) var motionBGSLoadedCount = 0
+    /// Guards the one automatic second-page load.
+    private var autoDeepLoadDone = false
 
     private let controller: WallpaperController
     private let displayObserver: DisplayObserver
     private var downloadedTemplates: [UUID: LibraryItem] = [:]
+
+    /// The locally downloaded copy of a catalog wallpaper, if we already have
+    /// one. Previews use this so a downloaded wallpaper actually animates.
+    func localCopy(of item: LibraryItem) -> LibraryItem? { downloadedTemplates[item.id] }
     private var downloadTask: Task<Void, Never>?
     private var motionBGSTask: Task<Void, Never>?
     private var motionBGSPageKeys = Set<String>()
@@ -335,8 +341,17 @@ final class WallpaperViewModel: ObservableObject {
                 // Keep walking the catalog until the pages stop yielding new
                 // wallpapers, so the Library ends up holding the whole site
                 // rather than only the first page of each tag.
-                // Only the first page loads automatically; further pages are on-demand
-                // via the "Load more" button, so the grid never balloons on its own.
+                // Load a second page automatically (once) so the catalog is a few
+                // hundred wallpapers deep across every category out of the box.
+                // Anything beyond that stays behind the "Load more" button so the
+                // grid never balloons on its own.
+                if self.motionBGSPage == 2 && !self.autoDeepLoadDone {
+                    self.autoDeepLoadDone = true
+                    Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        self?.loadMotionBGS()
+                    }
+                }
             }
         }
     }
