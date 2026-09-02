@@ -2056,11 +2056,11 @@ struct BrowseView: View {
             return KeyPlacement(alignment: .bottomTrailing, right: 26, bottom: 200, size: 30)
         }
         switch slot {
-        case 10: return KeyPlacement(alignment: .topLeading, left: 6, top: 6, size: 13, subtle: true)          // jammed in the top-left corner
-        case 11: return KeyPlacement(alignment: .top, top: 3, size: 12, subtle: true)                            // dead centre of the very top edge
-        case 12: return KeyPlacement(alignment: .bottomLeading, left: 4, bottom: 4, size: 12, subtle: true)      // bottom-left corner, tiny
-        case 13: return KeyPlacement(alignment: .trailing, right: 4, size: 12, subtle: true)                     // mid-height, hard against the right edge
-        default: return KeyPlacement(alignment: .topTrailing, right: 6, top: 44, size: 12, subtle: true)         // top-right, just under the corner controls
+        case 10: return KeyPlacement(alignment: .topLeading, left: 16, top: 16, size: 18, subtle: true)          // top-left corner
+        case 11: return KeyPlacement(alignment: .top, top: 14, size: 17, subtle: true)                           // centre of the top edge
+        case 12: return KeyPlacement(alignment: .bottomLeading, left: 16, bottom: 16, size: 17, subtle: true)    // bottom-left corner
+        case 13: return KeyPlacement(alignment: .trailing, right: 14, size: 17, subtle: true)                    // mid-height, right edge
+        default: return KeyPlacement(alignment: .topTrailing, right: 16, top: 60, size: 17, subtle: true)        // top-right, below the corner controls
         }
     }
 

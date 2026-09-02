@@ -121,7 +121,9 @@ struct SecretKeyView: View {
     @State private var pulse = false
 
     private var restOpacity: Double {
-        if subtle { return 0.06 }
+        // Hard keys are dimmer than the easy ones but still clearly visible —
+        // the challenge is that they're small and in odd spots, not invisible.
+        if subtle { return 0.6 }
         return pulse ? 0.95 : 0.72
     }
 
@@ -129,11 +131,14 @@ struct SecretKeyView: View {
         if !vault.has(id) {
             Text("🔑")
                 .font(.system(size: size))
-                // Easy keys glow and pulse; hard keys stay almost invisible until
-                // the cursor lands on them.
+                // Easy keys glow and pulse; hard keys are dim and still, but
+                // seeable — you just have to look in the odd corners.
                 .opacity(vanishing ? 0 : (hovering ? 1 : restOpacity))
                 .scaleEffect(vanishing ? 1.9 : (hovering ? 1.22 : (pulse && !subtle ? 1.06 : 1)))
                 .rotationEffect(.degrees(vanishing ? 28 : 0))
+                // A soft dark halo keeps a hard key legible even over bright,
+                // busy artwork, without the eye-catching yellow glow.
+                .shadow(color: .black.opacity(vanishing ? 0 : (subtle ? 0.7 : 0)), radius: 2)
                 .shadow(color: .yellow.opacity(vanishing ? 0 : (hovering ? 0.9 : (subtle ? 0 : (pulse ? 0.6 : 0.28)))),
                         radius: hovering ? 9 : (subtle ? 0 : (pulse ? 8 : 4)))
                 .onHover { hovering = $0 }

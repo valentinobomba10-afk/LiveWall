@@ -2,6 +2,10 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.10 — Make the hard keys visible
+
+- The 5 hard keys were too faint to see. They're now clearly visible (dimmer than the easy ones, with a soft dark halo so they read over bright art) and a bit larger — still no glow/pulse and still in odd corners, so they're harder but findable.
+
 ## 1.7.9 — 15 keys, five of them brutal
 
 - Bumped the key hunt from 10 to **15 keys**.
