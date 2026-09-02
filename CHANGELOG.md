@@ -2,6 +2,10 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.6 — Fix Discover grid layout
+
+- Fixed the Home/Discover grid where wallpaper cards rendered oversized and overlapped each other. Each card is now a clean 16:9 tile locked to its column.
+
 ## 1.7.5 — Game tabs & working auto-update
 
 - Games now open in a **browser-style tabbed view** — open several at once, switch between them without reloading, close individual tabs. No address bar, just the game.

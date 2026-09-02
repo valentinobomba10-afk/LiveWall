@@ -2192,16 +2192,37 @@ struct WallpaperCard: View {
     var body: some View {
         // Backdrop's grid is pure artwork — the title and metadata only surface
         // on hover, so a wall of cards reads as a wall of wallpapers.
+        //
+        // A transparent 16:9 rectangle fixes each cell to its column width, and
+        // the artwork fills that box as an overlay (clipped). Putting the aspect
+        // ratio on the poster itself let a `.fill` card overflow its cell and
+        // overlap its neighbours — the layout bug this replaces.
+        Color.clear
+            .aspectRatio(16.0/9.0, contentMode: .fit)
+            .overlay { cardContent }
+            .clipShape(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous))
+            .animation(.easeOut(duration: 0.15), value: hover)
+            .onHover { hovering in
+                hover = hovering
+                previewWork?.cancel()
+                guard hovering, let url = hoverPreviewURL(item) else { previewURL = nil; return }
+                let work = DispatchWorkItem { previewURL = url }
+                previewWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
+            }
+    }
+
+    private var cardContent: some View {
         ZStack(alignment: .bottomLeading) {
             PosterView(item: item)
-                .frame(maxWidth: .infinity)
-                .aspectRatio(16.0/9.0, contentMode: .fill)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Hovering previews motion — but only for local files, and only once
             // the pointer has rested a moment, so sweeping the grid stays smooth.
             if let previewURL {
                 LoopingVideoView(url: previewURL)
-                    .aspectRatio(16.0/9.0, contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
             }
 
@@ -2235,16 +2256,6 @@ struct WallpaperCard: View {
                     .padding(7).background(.black.opacity(0.45), in: Circle())
                     .padding(6).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous))
-        .animation(.easeOut(duration: 0.15), value: hover)
-        .onHover { hovering in
-            hover = hovering
-            previewWork?.cancel()
-            guard hovering, let url = hoverPreviewURL(item) else { previewURL = nil; return }
-            let work = DispatchWorkItem { previewURL = url }
-            previewWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
         }
     }
 }
