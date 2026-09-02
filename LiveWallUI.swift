@@ -215,6 +215,22 @@ final class UIState: ObservableObject {
     /// Transient confirmation shown after an action (Apply, Shuffle, …).
     @Published var toast: String?
 
+    /// Cached catalog. `library.items + vm.templates` and the category scan were
+    /// being recomputed on every body pass — with ~1000 wallpapers that meant
+    /// allocating a new array and lowercasing every title per keystroke, which
+    /// is where the sluggishness came from.
+    @Published private(set) var catalog: [LibraryItem] = []
+    @Published private(set) var categoryList: [String] = ["All"]
+    private var catalogSignature = -1
+
+    func refreshCatalog(library: [LibraryItem], templates: [LibraryItem]) {
+        let signature = library.count &* 100_003 &+ templates.count
+        guard signature != catalogSignature else { return }
+        catalogSignature = signature
+        catalog = library + templates
+        categoryList = ["All"] + Array(Set(templates.map { categoryLabel($0) })).sorted()
+    }
+
     func isFavorite(_ item: LibraryItem) -> Bool { favorites.contains(item.id.uuidString) }
     func toggleFavorite(_ item: LibraryItem) {
         let k = item.id.uuidString
@@ -272,7 +288,7 @@ struct LiveWallUI: View {
     @StateObject private var setupStore = SetupStore()
     @State private var lastLibraryCount = -1
 
-    private var allItems: [LibraryItem] { library.items + vm.templates }
+    private var allItems: [LibraryItem] { state.catalog.isEmpty ? library.items + vm.templates : state.catalog }
     private var displayID: CGDirectDisplayID {
         guard let s = NSScreen.main ?? NSScreen.screens.first else { return 0 }
         return DisplayObserver.displayID(for: s)
@@ -311,7 +327,8 @@ struct LiveWallUI: View {
         .tint(DS.blue)
         .onAppear {
             lastLibraryCount = library.items.count
-            KeyVault.shared.refreshGokuTarget(from: allItems.map(\.title))
+            state.refreshCatalog(library: library.items, templates: vm.templates)
+            KeyVault.shared.refreshGokuTarget(from: state.catalog.map(\.title))
             if state.current == nil { state.current = vm.runningItem ?? allItems.first }
             vm.refreshDisplays()          // so Apply targets a real display
             rotation.apply = { vm.apply($0) }
@@ -375,11 +392,13 @@ struct LiveWallUI: View {
         // A finished download becomes a real library item — show the user where
         // it went instead of leaving them on the catalog.
         .onChange(of: vm.templates.count) { _ in
-            KeyVault.shared.refreshGokuTarget(from: allItems.map(\.title))
+            state.refreshCatalog(library: library.items, templates: vm.templates)
+            KeyVault.shared.refreshGokuTarget(from: state.catalog.map(\.title))
         }
         .onChange(of: library.items.count) { count in
             guard lastLibraryCount >= 0, count > lastLibraryCount else { lastLibraryCount = count; return }
             lastLibraryCount = count
+            state.refreshCatalog(library: library.items, templates: vm.templates)
             if let newest = library.items.last { state.current = newest }
             state.search = ""
             state.go(.mine)
@@ -662,9 +681,7 @@ struct LiveWallUI: View {
         return out
     }
 
-    private var categories: [String] {
-        ["All"] + Array(Set(vm.templates.map { categoryLabel($0) })).sorted()
-    }
+    private var categories: [String] { state.categoryList }
 
     // MARK: Wallpaper browser (Wallpapers / Favorites / My Wallpapers)
 
@@ -1683,18 +1700,75 @@ private struct DiscoverPage: View {
 
 private struct WidgetsPage: View {
     let displayID: CGDirectDisplayID
+    @ObservedObject private var store = WidgetStore.shared
+
+    private var counts: [WidgetKind: Int] {
+        Dictionary(grouping: store.widgets, by: \.kind).mapValues(\.count)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Widgets").font(.system(size: 26, weight: .bold)).foregroundStyle(DS.ink)
-                Text("Add widgets to your desktop, then drag them where you want.")
-                    .font(.system(size: 12.5)).foregroundStyle(DS.ink2)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Widgets").font(.system(size: 26, weight: .bold)).foregroundStyle(DS.ink)
+                    Text("Drop widgets on your desktop, then drag and resize them where you like.")
+                        .font(.system(size: 12.5)).foregroundStyle(DS.ink2)
+                }
+                Spacer()
             }
             .padding(.horizontal, DS.pad).padding(.top, DS.pad).padding(.bottom, DS.gap)
 
+            // At-a-glance summary so the page isn't just a bare list.
+            HStack(spacing: 10) {
+                summaryTile("square.grid.2x2.fill", "\(store.widgets.count)", "On desktop", DS.blue)
+                summaryTile("display", "\(NSScreen.screens.count)", NSScreen.screens.count == 1 ? "Display" : "Displays", DS.purple)
+                ForEach(WidgetKind.allCases) { kind in
+                    if let n = counts[kind], n > 0 {
+                        summaryTile(icon(for: kind), "\(n)", label(for: kind), DS.ink2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, DS.pad).padding(.bottom, DS.gap)
+
             // The real widget engine, hosted inside the new chrome.
             WidgetsScreen(primaryDisplayID: displayID)
+                .padding(DS.gap)
+                .glass()
                 .padding(.horizontal, DS.pad).padding(.bottom, DS.pad)
+        }
+    }
+
+    private func summaryTile(_ icon: String, _ value: String, _ label: String, _ tint: Color) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(tint)
+                .frame(width: 28, height: 28)
+                .background(DS.selectionFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(DS.ink)
+                Text(label).font(.system(size: 10)).foregroundStyle(DS.ink3)
+            }
+        }
+        .padding(.horizontal, 11).padding(.vertical, 8)
+        .glass(DS.rTile)
+    }
+
+    private func icon(for kind: WidgetKind) -> String {
+        switch kind {
+        case .clock:       return "clock.fill"
+        case .image:       return "photo.fill"
+        case .appLauncher: return "square.grid.3x3.fill"
+        case .shortcut:    return "link"
+        case .todo:        return "checklist"
+        }
+    }
+    private func label(for kind: WidgetKind) -> String {
+        switch kind {
+        case .clock:       return "Clock"
+        case .image:       return "Image"
+        case .appLauncher: return "Launcher"
+        case .shortcut:    return "Shortcut"
+        case .todo:        return "To-Do"
         }
     }
 }

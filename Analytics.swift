@@ -104,4 +104,41 @@ enum Analytics {
         // Fire and forget. A failure here is never worth telling the user about.
         URLSession.shared.dataTask(with: request).resume()
     }
+
+    // MARK: Presence
+
+    private static var heartbeatTimer: Timer?
+
+    /// Refreshes `last_seen` every minute while LiveWall is open, so the admin
+    /// console can tell who is actually online right now rather than who last
+    /// launched the app. Same single row, same publishable key, no new data.
+    @MainActor static func startHeartbeat() {
+        guard isEnabled, heartbeatTimer == nil else { return }
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            recordLaunch()
+        }
+    }
+
+    @MainActor static func stopHeartbeat() {
+        heartbeatTimer?.invalidate(); heartbeatTimer = nil
+    }
+
+    /// Reads any directives the admin has set for *this* install: a wallpaper to
+    /// apply, and whether Games has been granted. The app decides what to do
+    /// with them — nothing is applied without the normal wallpaper pipeline.
+    static func fetchDirectives(_ done: @escaping @Sendable (String?, Bool) -> Void) {
+        guard isEnabled,
+              let url = URL(string: "\(supabaseURL)/rest/v1/\(table)?select=push_wallpaper,games_granted&install_id=eq.\(installID)")
+        else { return }
+        var r = URLRequest(url: url)
+        r.timeoutInterval = 10
+        r.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+        r.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        URLSession.shared.dataTask(with: r) { data, _, _ in
+            guard let data,
+                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let row = rows.first else { return }
+            done(row["push_wallpaper"] as? String, (row["games_granted"] as? Bool) ?? false)
+        }.resume()
+    }
 }

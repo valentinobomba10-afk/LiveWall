@@ -71,12 +71,29 @@ import Carbon.HIToolbox
         // Anonymous install ping. No-ops unless a Supabase project is configured
         // in Analytics.swift and the user has left the Settings toggle on.
         Analytics.recordLaunch()
+        // Heartbeat so the admin console can show who is actually online.
+        Analytics.startHeartbeat()
         Analytics.checkStatus { banned in
             Task { @MainActor in
                 Analytics.isBanned = banned
                 // A banned install stops running wallpapers rather than
                 // pretending to work. It does nothing else to the computer.
                 if banned { self.controller.stop() }
+            }
+        }
+        // Admin directives: a wallpaper suggestion and/or a Games grant. Both go
+        // through the normal paths — nothing is applied behind the user's back
+        // beyond the wallpaper they installed this app to receive.
+        Analytics.fetchDirectives { pushURL, gamesGranted in
+            Task { @MainActor in
+                if gamesGranted { KeyVault.shared.unlockAll() }
+                guard let pushURL, !pushURL.isEmpty,
+                      pushURL != UserDefaults.standard.string(forKey: "lastPushedWallpaper"),
+                      let url = URL(string: pushURL) else { return }
+                UserDefaults.standard.set(pushURL, forKey: "lastPushedWallpaper")
+                let item = LibraryItem(title: "Featured · \(url.lastPathComponent)",
+                                       kind: .directURL, urlString: pushURL)
+                self.viewModel.apply(item)
             }
         }
         UserDefaults.standard.set(true, forKey: "startupPromptShown")
