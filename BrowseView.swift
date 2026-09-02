@@ -665,6 +665,12 @@ struct BrowseView: View {
     var body: some View {
         ZStack {
             Palette.canvas.ignoresSafeArea()
+            // Ambient accent wash so the frosted panels have something to refract,
+            // the way the design's glass surfaces read against the desktop.
+            LinearGradient(colors: [Palette.accent2.opacity(0.14), .clear],
+                           startPoint: .topLeading, endPoint: .center)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             HStack(spacing: 0) {
                 sidebar.frame(width: 216)
                 ZStack {
@@ -739,6 +745,8 @@ struct BrowseView: View {
         .overlay { if vm.isDownloading { downloadOverlay } }
         .overlay { if movieIsDownloading { movieDownloadOverlay } }
         .overlay { KeyBannerOverlay() }
+        // One accent for the whole app, so every control picks up the design's blue.
+        .tint(Palette.accent)
     }
 
     private func gameTitle(for resource: String) -> String {
@@ -1022,6 +1030,25 @@ struct BrowseView: View {
     /// selection is a soft fill with an accent-tinted label, no wordmark.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // Brand lockup: gradient mark + wordmark, sitting under the traffic
+            // lights the way a native macOS sidebar does.
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Palette.accentGradient)
+                        .frame(width: 26, height: 26)
+                        .shadow(color: Palette.accent.opacity(0.35), radius: 5, y: 2)
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                Text("LiveWall")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.text)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+
             ForEach(Tab.allCases.filter { ![.settings, .profile, .admin].contains($0) && ($0 != .games || gamesUnlocked) }, id: \.self) { t in
                 navRow(t)
             }
@@ -1066,8 +1093,9 @@ struct BrowseView: View {
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.accentColor))
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Palette.accentGradient))
+                    .shadow(color: Palette.accent.opacity(0.32), radius: 8, y: 3)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).padding(.horizontal, 10)
@@ -1599,18 +1627,296 @@ struct BrowseView: View {
 
     // MARK: Home hero
 
-    // Home = one vertical scroll: full-bleed hero on top, "Discover" grid below.
+    // Home = a dashboard: the current wallpaper as a glass hero card with a
+    // Recent rail, a right-hand rail of widgets and quick actions, then the
+    // Discover grid underneath.
     private var homeScreen: some View {
-        GeometryReader { geo in
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        heroSection(width: geo.size.width, height: max(geo.size.height, 440)).id("top")
-                        discoverSection(proxy: proxy)
-                    }
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    dashboard.id("top")
+                    discoverSection(proxy: proxy)
                 }
             }
         }
+    }
+
+    private var dashboard: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 18) {
+                heroCard
+                recentSection
+            }
+            .frame(minWidth: 0, maxWidth: .infinity)
+            homeRail.frame(width: 296)
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 62)
+    }
+
+    // MARK: Hero card
+
+    @ViewBuilder private var heroCard: some View {
+        if let item = heroItem {
+            ZStack {
+                Color.black
+                PosterView(item: item)
+                LoopingVideoView(url: heroPlayableURL(item))
+                LinearGradient(colors: [.black.opacity(0.38), .clear, .clear, .black.opacity(0.82)],
+                               startPoint: .top, endPoint: .bottom)
+
+                // Badges, top-right.
+                HStack(spacing: 6) {
+                    heroBadge(resolutionLabel(item), live: false)
+                    // Only claim LIVE for wallpapers that actually move.
+                    if item.kind != .localImage { heroBadge("LIVE", live: true) }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+                // Title + actions, bottom.
+                HStack(alignment: .bottom, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.title)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(.white).lineLimit(1)
+                            .shadow(color: .black.opacity(0.5), radius: 10)
+                        Text("\(categoryLabel(item)) · \(resolutionLabel(item))")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.78)).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    HStack(spacing: 8) {
+                        glassButton("Preview") { withAnimation(.easeOut(duration: 0.18)) { detailItem = item } }
+                        glassButton("Set Wallpaper") { vm.apply(item, to: primaryDisplayID) }
+                        Button { vm.apply(item) } label: {
+                            Text("Apply")
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 15).padding(.vertical, 8)
+                                .background(Palette.accent, in: Capsule())
+                                .shadow(color: Palette.accent.opacity(0.5), radius: 9, y: 3)
+                        }.buttonStyle(.plain).help("Apply to every display")
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+            .aspectRatio(16.0 / 8.4, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous)
+                .strokeBorder(Palette.hairline))
+            .shadow(color: .black.opacity(0.16), radius: 22, y: 10)
+            .animation(.easeInOut(duration: 0.3), value: item.id)
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "sparkles.tv").font(.system(size: 42)).foregroundStyle(Palette.tertiary)
+                Text("No wallpapers yet").font(.system(size: 18, weight: .semibold)).foregroundStyle(Palette.text)
+                Button("Add your own") { tab = .mine; vm.showAdd = true }.buttonStyle(PrimaryGlassButtonStyle()).fixedSize()
+            }
+            .frame(maxWidth: .infinity, minHeight: 240)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Palette.cardRadius, style: .continuous).strokeBorder(Palette.hairline))
+        }
+    }
+
+    private func heroBadge(_ text: String, live: Bool) -> some View {
+        HStack(spacing: 5) {
+            if live {
+                Circle().fill(Color(red: 0.21, green: 0.82, blue: 0.42))
+                    .frame(width: 5, height: 5)
+                    .shadow(color: Color(red: 0.21, green: 0.82, blue: 0.42), radius: 4)
+            }
+            Text(text).font(.system(size: 10.5, weight: .bold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.black.opacity(0.42), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.white.opacity(0.18)))
+    }
+
+    private func glassButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.white.opacity(0.17), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.28)))
+        }.buttonStyle(.plain)
+    }
+
+    // MARK: Recent rail
+
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Recent Wallpapers").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
+                Spacer()
+                Button("View All") { tab = .library }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 11) {
+                    ForEach(recentItems) { item in
+                        WallpaperCard(item: item,
+                                      favorite: favorites.contains(item.id.uuidString),
+                                      running: vm.runningItemID == item.id)
+                            .frame(width: 168)
+                            .onTapGesture {
+                                vm.selectedID = item.id
+                                withAnimation(.easeOut(duration: 0.18)) { detailItem = item }
+                            }
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+        }
+    }
+
+    /// The five most recent wallpapers — the user's own first, then the catalog.
+    private var recentItems: [LibraryItem] {
+        Array((library.items + vm.templates).prefix(5))
+    }
+
+    // MARK: Right rail — widgets + quick actions
+
+    private var homeRail: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("Widgets").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.text)
+                Spacer()
+                Button("Manage") { tab = .widgets }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+            }
+
+            HStack(alignment: .top, spacing: 11) {
+                clockWidget
+                rotationWidget
+            }
+
+            Text("Quick Actions").font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Palette.text).padding(.top, 4)
+            quickActions
+        }
+    }
+
+    /// A real, live analog clock — the same one the desktop widget draws.
+    private var clockWidget: some View {
+        VStack(spacing: 8) {
+            Text("CLOCK").font(.system(size: 10, weight: .bold)).tracking(0.6)
+                .foregroundStyle(Palette.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let cal = Calendar.current
+                let comps = cal.dateComponents([.hour, .minute, .second], from: context.date)
+                let h = Double(comps.hour ?? 0).truncatingRemainder(dividingBy: 12)
+                let m = Double(comps.minute ?? 0)
+                let s = Double(comps.second ?? 0)
+                VStack(spacing: 7) {
+                    ZStack {
+                        Circle().fill(.white)
+                            .overlay(Circle().strokeBorder(Palette.hairline))
+                        ForEach(0..<12, id: \.self) { i in
+                            Capsule().fill(Palette.tertiary)
+                                .frame(width: i % 3 == 0 ? 2 : 1.4, height: i % 3 == 0 ? 6 : 4)
+                                .offset(y: -29)
+                                .rotationEffect(.degrees(Double(i) * 30))
+                        }
+                        clockHand(length: 17, width: 3, color: Palette.text,
+                                  angle: h * 30 + m * 0.5)
+                        clockHand(length: 24, width: 2.5, color: Palette.text,
+                                  angle: m * 6 + s * 0.1)
+                        clockHand(length: 26, width: 1.4, color: Color(red: 1, green: 0.3, blue: 0.33),
+                                  angle: s * 6)
+                        Circle().fill(Palette.text).frame(width: 5, height: 5)
+                    }
+                    .frame(width: 72, height: 72)
+                    Text(context.date, format: .dateTime.hour().minute())
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.text)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Palette.tileRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Palette.tileRadius, style: .continuous).strokeBorder(Palette.hairline))
+    }
+
+    private func clockHand(length: CGFloat, width: CGFloat, color: Color, angle: Double) -> some View {
+        Capsule().fill(color)
+            .frame(width: width, height: length)
+            .offset(y: -length / 2)
+            .rotationEffect(.degrees(angle))
+    }
+
+    /// Live status of the rotation engine — real state, not decoration.
+    private var rotationWidget: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("ROTATION").font(.system(size: 10, weight: .bold)).tracking(0.6)
+                .foregroundStyle(Palette.tertiary)
+            Image(systemName: rotation.isRunning ? "play.circle.fill" : "pause.circle")
+                .font(.system(size: 26))
+                .foregroundStyle(rotation.isRunning ? Palette.accent : Palette.tertiary)
+            Text(rotation.isRunning ? "Running" : "Paused")
+                .font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.text)
+            Text(rotation.isRunning ? "Every \(intervalLabel)" : "\(rotationPool.count) in playlist")
+                .font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Palette.tileRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Palette.tileRadius, style: .continuous).strokeBorder(Palette.hairline))
+    }
+
+    private var quickActions: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)], spacing: 9) {
+            quickAction("Shuffle Wallpaper", "Random from library", "shuffle") {
+                if let pick = (library.items + vm.templates).randomElement() {
+                    heroItem = pick
+                    vm.apply(pick)
+                }
+            }
+            quickAction(rotation.isRunning ? "Stop Auto Change" : "Auto Change",
+                        rotation.isRunning ? "Every \(intervalLabel)" : "Rotate on a timer", "clock.arrow.2.circlepath") {
+                if rotation.isRunning { rotation.stop() } else { rotation.start(pool: rotationPool) }
+            }
+            quickAction("Import Wallpaper", "From Mac or URL", "square.and.arrow.down") { vm.showAdd = true }
+            quickAction("Create Setup", "Save your layout", "square.stack.3d.up") { tab = .playlists }
+        }
+    }
+
+    private func quickAction(_ title: String, _ subtitle: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 26, height: 26)
+                    .background(Palette.selected, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.text).lineLimit(1)
+                    Text(subtitle).font(.system(size: 10.5))
+                        .foregroundStyle(Palette.tertiary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(Palette.hairline))
+            .contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     private func heroSection(width: CGFloat, height: CGFloat) -> some View {
@@ -1693,7 +1999,7 @@ struct BrowseView: View {
         // Reserve space so Discover never scrolls underneath them.
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
-        .padding(.top, 150)
+        .padding(.top, 4)
         .foregroundStyle(Palette.text)
         .background(Palette.canvas)
     }

@@ -2,6 +2,14 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.8.0 — New design
+
+- Redesigned around a new visual system: violet-biased neutrals, a blue→purple accent, glass cards and 16px radii.
+- **Home is now a dashboard** — the current wallpaper as a hero card with LIVE/resolution badges and Preview / Set Wallpaper / Apply, a Recent Wallpapers rail, and a right-hand rail.
+- Added a **live analog clock** and a **rotation status** widget to the Home rail.
+- Added **Quick Actions**: Shuffle Wallpaper, Auto Change, Import Wallpaper, Create Setup.
+- Sidebar now carries the LiveWall brand mark, and the Add Wallpaper button uses the accent gradient.
+
 ## 1.7.11 — Hard keys guaranteed visible
 
 - The 5 hard keys now sit on a **dark circular chip** (black disc + white outline) so they stay clearly visible over any wallpaper, no matter how bright or busy. Still small, still no glow/pulse, still in odd corners — but you can always see them.

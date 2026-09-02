@@ -1154,18 +1154,29 @@ struct GlassSegmented: View {
 /// Backdrop-style palette: near-black with a plum cast, flat surfaces, hairline
 /// separators, and colour reserved for the selected item and primary actions.
 enum Palette {
-    // Light theme. Near-white canvas, soft grey chrome, dark text.
-    static let canvas    = Color(red: 0.96, green: 0.96, blue: 0.975)
-    static let sidebar   = Color(red: 0.99, green: 0.99, blue: 1.0)
+    // Violet-biased neutrals rather than flat grey — a chosen neutral, matching
+    // the LiveWall design system. Blue → purple accent pair.
+    static let canvas    = Color(red: 0.945, green: 0.941, blue: 0.965)   // #F1F0F6
+    static let sidebar   = Color(red: 0.933, green: 0.925, blue: 0.965)   // #EEECF6
+    static let card      = Color.white.opacity(0.72)
     static let chip      = Color.black.opacity(0.05)
     static let chipHover = Color.black.opacity(0.09)
-    static let selected  = Color.black.opacity(0.06)
-    static let hairline  = Color.black.opacity(0.08)
-    static let secondary = Color.black.opacity(0.55)
-    static let tertiary  = Color.black.opacity(0.35)
+    static let selected  = Color(red: 0.184, green: 0.42, blue: 1.0).opacity(0.12)
+    static let hairline  = Color.black.opacity(0.09)
+    static let secondary = Color(red: 0.424, green: 0.412, blue: 0.502)   // #6C6980
+    static let tertiary  = Color(red: 0.608, green: 0.596, blue: 0.671)   // #9B98AB
     /// Primary text on light chrome. Used where the old design hardcoded white.
-    static let text      = Color.black.opacity(0.9)
-    static let cardRadius: CGFloat = 12
+    static let text      = Color(red: 0.090, green: 0.086, blue: 0.110)   // #17161C
+
+    /// Accent pair — blue leading into purple, used for gradients and marks.
+    static let accent    = Color(red: 0.184, green: 0.42,  blue: 1.0)     // #2F6BFF
+    static let accent2   = Color(red: 0.486, green: 0.302, blue: 1.0)     // #7C4DFF
+    static var accentGradient: LinearGradient {
+        LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    static let cardRadius: CGFloat = 16
+    static let tileRadius: CGFloat = 14
 }
 
 // MARK: - Root
