@@ -692,7 +692,16 @@ struct BrowseView: View {
                     playerBar
                 }
             }
+            // The game browser is a full-window overlay (not a sheet), so the
+            // Full Screen button — which toggles the real window — makes the game
+            // genuinely fill the display instead of floating in a centred sheet.
+            if showGames {
+                gameBrowser
+                    .transition(.opacity)
+                    .zIndex(50)
+            }
         }
+        .animation(.easeOut(duration: 0.18), value: showGames)
         .onAppear {
             lastLibraryCount = library.items.count
             if heroItem == nil { heroItem = featured.first ?? library.items.first }
@@ -719,7 +728,6 @@ struct BrowseView: View {
             detailItem = nil
             withAnimation(.easeOut(duration: 0.15)) { tab = .mine }
         }
-        .sheet(isPresented: $showGames) { gameBrowser }
         .sheet(item: $selectedMovie) { item in
             moviePlayerSheet(item)
         }
@@ -815,9 +823,10 @@ struct BrowseView: View {
                         .allowsHitTesting(game.id == activeGameID)
                 }
             }
-            .frame(minWidth: 900, minHeight: 560)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(red: 0.04, green: 0.04, blue: 0.05))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea())
         .onAppear { gameFullscreen = GameWindow.isFullscreen }
     }
 

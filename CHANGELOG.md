@@ -2,6 +2,10 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.8 — Real full-screen games
+
+- Games now open as a full-window view instead of a floating sheet, so the **Full Screen** button (⌃⌘F) makes the game truly fill the whole display.
+
 ## 1.7.7 — All keys on wallpapers
 
 - Moved the Settings, Home, and update-popup keys onto wallpaper pages, so all ten hidden keys now live on wallpapers (bottom-right of each). Added Mist Over the Pines, Night Sky, and Cosmic Mountain OLED as the three new keyed wallpapers.
