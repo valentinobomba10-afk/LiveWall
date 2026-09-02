@@ -729,6 +729,8 @@ struct PlaceholderWidgetView: View {
 struct WidgetsScreen: View {
     @ObservedObject var store = WidgetStore.shared
     let primaryDisplayID: UInt32
+    /// The page around this screen draws its own title, so it can suppress ours.
+    var showsTitle = true
     @State private var selected: UUID?
     @State private var showGallery = false
     @State private var cornerMargin: Double = 24
@@ -740,9 +742,11 @@ struct WidgetsScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Widgets")
-                    .font(.system(size: 38, weight: .bold)).foregroundStyle(Palette.text)
-                    .padding(.top, 72)
+                if showsTitle {
+                    Text("Widgets")
+                        .font(.system(size: 38, weight: .bold)).foregroundStyle(Palette.text)
+                        .padding(.top, 72)
+                }
 
                 HStack(spacing: 10) {
                     Button { showGallery = true } label: {

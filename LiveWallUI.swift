@@ -287,6 +287,7 @@ struct LiveWallUI: View {
     @StateObject private var rotation = RotationEngine()
     @StateObject private var setupStore = SetupStore()
     @State private var lastLibraryCount = -1
+    @State private var showSubmit = false
 
     private var allItems: [LibraryItem] { state.catalog.isEmpty ? library.items + vm.templates : state.catalog }
     private var displayID: CGDirectDisplayID {
@@ -406,6 +407,7 @@ struct LiveWallUI: View {
         }
         .overlay { KeyBannerOverlay() }
         .sheet(isPresented: $vm.showAdd) { AddSheet(vm: vm) }
+        .sheet(isPresented: $showSubmit) { SubmitSheet().frame(width: 460) }
         .sheet(item: $state.detail) { item in
             WallpaperDetail(item: item, vm: vm, displayID: displayID,
                             isFavorite: state.isFavorite(item),
@@ -623,6 +625,11 @@ struct LiveWallUI: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 8) {
+                Button { showSubmit = true } label: {
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(DS.ink2).frame(width: 30, height: 30)
+                        .glass(DS.rCtl)
+                }.buttonStyle(.plain).help("Submit a wallpaper to the community")
                 Button { vm.showAdd = true } label: {
                     Image(systemName: "plus").font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(DS.ink2).frame(width: 30, height: 30)
@@ -1732,7 +1739,7 @@ private struct WidgetsPage: View {
             .padding(.horizontal, DS.pad).padding(.bottom, DS.gap)
 
             // The real widget engine, hosted inside the new chrome.
-            WidgetsScreen(primaryDisplayID: displayID)
+            WidgetsScreen(primaryDisplayID: displayID, showsTitle: false)
                 .padding(DS.gap)
                 .glass()
                 .padding(.horizontal, DS.pad).padding(.bottom, DS.pad)
