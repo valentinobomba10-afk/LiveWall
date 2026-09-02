@@ -8,16 +8,21 @@ import SwiftUI
 @MainActor
 final class KeyVault: ObservableObject {
     static let shared = KeyVault()
-    static let total = 10
+    static let total = 15
 
-    /// Stable ids for every hidden key. All ten now live on wallpaper pages.
-    static let wallpaperKeys = (0..<10).map { "wallpaper-\($0)" }
+    /// Stable ids for every hidden key. All fifteen live on wallpaper pages.
+    static let wallpaperKeys = (0..<15).map { "wallpaper-\($0)" }
 
-    /// The ten wallpapers that carry a key, pinned by title.
+    /// The fifteen wallpapers that carry a key, pinned by title.
     ///
     /// Matching on title (not index) is stable regardless of list order or how
     /// many MotionBGS pages have loaded. Every title here is in the built-in
-    /// catalog, so all ten keys are always reachable from the Library.
+    /// catalog, so all fifteen keys are always reachable from the Library.
+    ///
+    /// The first ten are the "easy" keys (a clear, pulsing key bottom-right of
+    /// the page). The last five are the **hard** keys — on busier character /
+    /// anime-style wallpapers, tucked into obscure spots, dim and non-pulsing
+    /// (see `hardKeyCount` and the placement logic in BrowseView).
     static let keyedWallpaperTitles = [
         "MotionBGS · Rainy Forest",
         "MotionBGS · Spring Flower Field",
@@ -29,7 +34,18 @@ final class KeyVault: ObservableObject {
         "MotionBGS · Mist Over the Pines",
         "MotionBGS · Night Sky",
         "MotionBGS · Cosmic Mountain OLED",
+        // Hard five — obscure placement, dim, no pulse.
+        "MotionBGS · Sunset Samurai  Blade Duel",
+        "MotionBGS · Cyber Streets Reign",
+        "MotionBGS · The Witchers Path",
+        "MotionBGS · Ghost of Night City",
+        "MotionBGS · Neon Infused Iron Man",
     ]
+
+    /// The last N keyed wallpapers are the hard ones.
+    static let hardKeyCount = 5
+    /// True for slots that should use the dim, obscure "hard" placement.
+    static func isHardSlot(_ slot: Int) -> Bool { slot >= total - hardKeyCount }
 
     private let storageKey = "liveWallSecretKeys"
 
@@ -96,24 +112,33 @@ final class KeyVault: ObservableObject {
 struct SecretKeyView: View {
     let id: String
     var size: CGFloat = 19
+    /// Hard keys: nearly invisible at rest, no pulse, no glow — you basically
+    /// have to sweep the cursor over the exact spot to reveal them.
+    var subtle = false
     @ObservedObject private var vault = KeyVault.shared
     @State private var hovering = false
     @State private var vanishing = false
     @State private var pulse = false
 
+    private var restOpacity: Double {
+        if subtle { return 0.06 }
+        return pulse ? 0.95 : 0.72
+    }
+
     var body: some View {
         if !vault.has(id) {
             Text("🔑")
                 .font(.system(size: size))
-                // Brighter at rest (0.85) and a slow glow pulse so the keys
-                // actually catch the eye instead of blending into the artwork.
-                .opacity(vanishing ? 0 : (hovering ? 1 : (pulse ? 0.95 : 0.72)))
-                .scaleEffect(vanishing ? 1.9 : (hovering ? 1.22 : (pulse ? 1.06 : 1)))
+                // Easy keys glow and pulse; hard keys stay almost invisible until
+                // the cursor lands on them.
+                .opacity(vanishing ? 0 : (hovering ? 1 : restOpacity))
+                .scaleEffect(vanishing ? 1.9 : (hovering ? 1.22 : (pulse && !subtle ? 1.06 : 1)))
                 .rotationEffect(.degrees(vanishing ? 28 : 0))
-                .shadow(color: .yellow.opacity(vanishing ? 0 : (hovering ? 0.9 : (pulse ? 0.6 : 0.28))),
-                        radius: hovering ? 9 : (pulse ? 8 : 4))
+                .shadow(color: .yellow.opacity(vanishing ? 0 : (hovering ? 0.9 : (subtle ? 0 : (pulse ? 0.6 : 0.28)))),
+                        radius: hovering ? 9 : (subtle ? 0 : (pulse ? 8 : 4)))
                 .onHover { hovering = $0 }
                 .onAppear {
+                    guard !subtle else { return }   // hard keys never pulse
                     withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
                         pulse = true
                     }
@@ -202,9 +227,10 @@ struct KeyBannerOverlay: View {
 struct SecretKeyLayer: NSViewRepresentable {
     let id: String
     var size: CGFloat = 19
+    var subtle = false
 
     func makeNSView(context: Context) -> NSView {
-        let host = NSHostingView(rootView: SecretKeyView(id: id, size: size))
+        let host = NSHostingView(rootView: SecretKeyView(id: id, size: size, subtle: subtle))
         host.wantsLayer = true
         host.layer?.backgroundColor = .clear
         host.layer?.zPosition = 10_000
@@ -213,6 +239,6 @@ struct SecretKeyLayer: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         nsView.layer?.zPosition = 10_000
-        (nsView as? NSHostingView<SecretKeyView>)?.rootView = SecretKeyView(id: id, size: size)
+        (nsView as? NSHostingView<SecretKeyView>)?.rootView = SecretKeyView(id: id, size: size, subtle: subtle)
     }
 }

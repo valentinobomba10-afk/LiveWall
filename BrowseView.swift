@@ -1045,7 +1045,7 @@ struct BrowseView: View {
                                 .frame(width: 6, height: 6)
                         }
                     }
-                    Text("Hidden on ten wallpaper pages — open wallpapers from your Library and look bottom-right.")
+                    Text("15 keys hidden on wallpaper pages. Ten glow bottom-right; the last five are dim and tucked in odd corners of busier wallpapers — sweep your cursor to find them.")
                         .font(.system(size: 10)).foregroundStyle(Palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2031,18 +2031,37 @@ struct BrowseView: View {
     /// underneath it no matter what the SwiftUI ordering says.
     @ViewBuilder private var keyOverlay: some View {
         let shown = detailItem ?? (tab == .home ? heroItem : nil)
-        if let item = shown, let key = wallpaperKey(for: item) {
-            SecretKeyLayer(id: key)
-                .frame(width: 30, height: 30)
-                .padding(.trailing, 26).padding(.bottom, 200)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        if let item = shown, let slot = KeyVault.keyedWallpaperTitles.firstIndex(of: item.title) {
+            let place = keyPlacement(slot: slot)
+            SecretKeyLayer(id: KeyVault.wallpaperKeys[slot], size: place.size, subtle: place.subtle)
+                .frame(width: max(place.size + 12, 22), height: max(place.size + 12, 22))
+                .padding(.leading, place.left).padding(.trailing, place.right)
+                .padding(.top, place.top).padding(.bottom, place.bottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: place.alignment)
         }
     }
 
-    /// Ten named wallpapers carry a hidden key.
-    private func wallpaperKey(for item: LibraryItem) -> String? {
-        guard let slot = KeyVault.keyedWallpaperTitles.firstIndex(of: item.title) else { return nil }
-        return KeyVault.wallpaperKeys[slot]
+    private struct KeyPlacement {
+        var alignment: Alignment
+        var left: CGFloat = 0, right: CGFloat = 0, top: CGFloat = 0, bottom: CGFloat = 0
+        var size: CGFloat = 30
+        var subtle = false
+    }
+
+    /// Easy keys (slots 0–9) glow bottom-right. The hard five (slots 10–14) are
+    /// dim and tucked into spots nobody scans: hard against an edge, behind where
+    /// the title sits, mid-edge, etc. Each hard slot gets its own hiding place.
+    private func keyPlacement(slot: Int) -> KeyPlacement {
+        guard KeyVault.isHardSlot(slot) else {
+            return KeyPlacement(alignment: .bottomTrailing, right: 26, bottom: 200, size: 30)
+        }
+        switch slot {
+        case 10: return KeyPlacement(alignment: .topLeading, left: 6, top: 6, size: 13, subtle: true)          // jammed in the top-left corner
+        case 11: return KeyPlacement(alignment: .top, top: 3, size: 12, subtle: true)                            // dead centre of the very top edge
+        case 12: return KeyPlacement(alignment: .bottomLeading, left: 4, bottom: 4, size: 12, subtle: true)      // bottom-left corner, tiny
+        case 13: return KeyPlacement(alignment: .trailing, right: 4, size: 12, subtle: true)                     // mid-height, hard against the right edge
+        default: return KeyPlacement(alignment: .topTrailing, right: 6, top: 44, size: 12, subtle: true)         // top-right, just under the corner controls
+        }
     }
 
     private func card(_ item: LibraryItem, removable: Bool) -> some View {

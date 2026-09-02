@@ -2,6 +2,11 @@
 
 All notable changes to LiveWall. Newest first.
 
+## 1.7.9 — 15 keys, five of them brutal
+
+- Bumped the key hunt from 10 to **15 keys**.
+- The last **5 keys are hard**: hidden on busier character/anime-style wallpapers (Sunset Samurai, Cyber Streets Reign, The Witcher's Path, Ghost of Night City, Neon Iron Man), tucked into obscure edges/corners, dim and non-pulsing — you have to sweep your cursor to find them.
+
 ## 1.7.8 — Real full-screen games
 
 - Games now open as a full-window view instead of a floating sheet, so the **Full Screen** button (⌃⌘F) makes the game truly fill the whole display.
