@@ -2258,7 +2258,7 @@ private struct KeysPage: View {
 private struct SettingsPage: View {
     @ObservedObject var vm: WallpaperViewModel
     @State private var section = "General"
-    private let sections = ["General", "Appearance", "Performance", "Wallpapers", "Startup", "Updates", "About"]
+    private let sections = ["General", "Appearance", "Performance", "Wallpapers", "Startup", "Updates", "API", "About"]
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.gap) {
@@ -2289,7 +2289,12 @@ private struct SettingsPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.gap) {
                     Text(section).font(.system(size: 22, weight: .bold)).foregroundStyle(DS.ink)
-                    group { body(for: section) }
+                    // The API panel draws its own cards, so it isn't boxed again.
+                    if section == "API" {
+                        APICheckPanel()
+                    } else {
+                        group { body(for: section) }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -2398,6 +2403,282 @@ private struct SettingsPage: View {
                 get: { UserDefaults.standard.object(forKey: key) as? Bool ?? false },
                 set: { UserDefaults.standard.set($0, forKey: key) }
             )).labelsHidden().toggleStyle(.switch)
+        }
+    }
+}
+
+// MARK: - API health checks
+
+/// Live diagnostics for everything LiveWall talks to over the network.
+///
+/// This exists because several failures here are invisible from inside the app:
+/// a missing table, an un-applied security patch, or an expired admin key all
+/// just look like "nothing happens". Each check reports the real HTTP status.
+@MainActor
+final class APIHealth: ObservableObject {
+
+    enum State { case pending, running, ok, warn, fail, skip }
+
+    struct Check: Identifiable {
+        let id = UUID()
+        var name: String
+        var detail: String
+        var state: State = .pending
+        var note: String = ""
+    }
+
+    @Published var checks: [Check] = []
+    @Published var running = false
+    @Published var lastRun: Date?
+
+    private var base: String { Analytics.supabaseURL }
+    private var key: String { Analytics.supabaseAnonKey }
+
+    func run() {
+        guard !running else { return }
+        running = true
+        checks = [
+            Check(name: "Project reachable", detail: "REST endpoint responds"),
+            Check(name: "Register install", detail: "Heartbeat upsert into installs"),
+            Check(name: "Status lookup", detail: "install_status() returns this install"),
+            Check(name: "Submissions table", detail: "Community wallpapers readable"),
+            Check(name: "Broadcast table", detail: "Featured wallpaper readable"),
+            Check(name: "Storage bucket", detail: "wallpapers bucket for uploads"),
+            Check(name: "Signed in", detail: "Needed to submit wallpapers"),
+            Check(name: "Security patch", detail: "Public key must NOT read the installs table"),
+            Check(name: "Admin key", detail: "~/.livewall-admin/config.json")
+        ]
+        Task { await runAll(); running = false; lastRun = Date() }
+    }
+
+    private func set(_ i: Int, _ state: State, _ note: String) {
+        guard checks.indices.contains(i) else { return }
+        checks[i].state = state
+        checks[i].note = note
+    }
+
+    private func request(_ path: String, method: String = "GET",
+                         body: Data? = nil, extraPrefer: String? = nil,
+                         apiKey: String? = nil) -> URLRequest? {
+        guard let url = URL(string: "\(base)/\(path)") else { return nil }
+        let k = apiKey ?? key
+        var r = URLRequest(url: url)
+        r.httpMethod = method
+        r.timeoutInterval = 15
+        r.setValue(k, forHTTPHeaderField: "apikey")
+        r.setValue("Bearer \(k)", forHTTPHeaderField: "Authorization")
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let extraPrefer { r.setValue(extraPrefer, forHTTPHeaderField: "Prefer") }
+        r.httpBody = body
+        return r
+    }
+
+    private func code(_ r: URLRequest?) async -> Int {
+        guard let r else { return -1 }
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: r)
+            return (resp as? HTTPURLResponse)?.statusCode ?? -1
+        } catch { return -1 }
+    }
+
+    private func runAll() async {
+        guard !base.isEmpty, !key.isEmpty else {
+            for i in checks.indices { set(i, .skip, "No Supabase project configured") }
+            return
+        }
+
+        // 1 — project reachable
+        set(0, .running, "")
+        // Any HTTP reply proves the project is up; the REST root itself answers
+        // 401 by design, so don't surface that as if it were a failure.
+        let root = await code(request("rest/v1/broadcast?select=id&limit=1"))
+        set(0, root > 0 ? .ok : .fail, root > 0 ? "Reachable" : "No response — offline, or the project URL is wrong")
+        guard root > 0 else {
+            for i in 1..<checks.count where checks[i].state == .pending {
+                set(i, .skip, "Project unreachable")
+            }
+            return
+        }
+
+        // 2 — register install (the heartbeat upsert)
+        set(1, .running, "")
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let payload: [String: Any] = [
+            "install_id": Analytics.installID,
+            "app_version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
+            "os_version": "\(os.majorVersion).\(os.minorVersion)",
+            "last_seen": ISO8601DateFormatter().string(from: Date())
+        ]
+        let body = try? JSONSerialization.data(withJSONObject: payload)
+        let up = await code(request("rest/v1/installs?on_conflict=install_id", method: "POST",
+                                    body: body, extraPrefer: "resolution=merge-duplicates"))
+        switch up {
+        case 200...204: set(1, .ok, "HTTP \(up)")
+        case 404:       set(1, .fail, "HTTP 404 — installs table missing. Run docs/supabase-schema.sql")
+        case 401, 403:  set(1, .fail, "HTTP \(up) — key rejected or RLS blocks insert")
+        default:        set(1, .fail, "HTTP \(up)")
+        }
+
+        // 3 — status lookup through the security-definer function
+        set(2, .running, "")
+        let rpcBody = try? JSONSerialization.data(withJSONObject: ["p_install_id": Analytics.installID])
+        let rpc = await code(request("rest/v1/rpc/install_status", method: "POST", body: rpcBody))
+        switch rpc {
+        case 200:   set(2, .ok, "HTTP 200")
+        case 404:   set(2, .warn, "HTTP 404 — install_status() missing. Run docs/supabase-security-patch.sql")
+        default:    set(2, .fail, "HTTP \(rpc)")
+        }
+
+        // 4 — submissions
+        set(3, .running, "")
+        let subs = await code(request("rest/v1/submissions?select=id&status=eq.approved&limit=1"))
+        set(3, subs == 200 ? .ok : .fail,
+            subs == 404 ? "HTTP 404 — submissions table missing" : "HTTP \(subs)")
+
+        // 5 — broadcast
+        set(4, .running, "")
+        let bc = await code(request("rest/v1/broadcast?select=wallpaper_url&limit=1"))
+        set(4, bc == 200 ? .ok : .fail,
+            bc == 404 ? "HTTP 404 — broadcast table missing" : "HTTP \(bc)")
+
+        // 6 — storage bucket.
+        //
+        // The public key can't introspect storage: object/list answers 200 even
+        // for a bucket that doesn't exist, so it can't be used as a probe. Only
+        // the admin key can actually list buckets, so verify there or say so.
+        set(5, .running, "")
+        if let cfg = AdminConfig.shared,
+           let r = request("storage/v1/bucket", apiKey: cfg.secret) {
+            do {
+                let (data, resp) = try await URLSession.shared.data(for: r)
+                let sc = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                if sc == 200,
+                   let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                    let names = list.compactMap { $0["name"] as? String }
+                    set(5, names.contains("wallpapers") ? .ok : .fail,
+                        names.contains("wallpapers")
+                            ? "'wallpapers' bucket present"
+                            : "Missing — buckets: \(names.joined(separator: ", "))")
+                } else {
+                    set(5, .warn, "HTTP \(sc)")
+                }
+            } catch { set(5, .warn, "Could not reach storage") }
+        } else {
+            set(5, .skip, "Needs an admin key to verify — uploads will still report errors")
+        }
+
+        // 7 — auth
+        set(6, .running, "")
+        if let email = AuthService.shared.session?.user.email {
+            set(6, .ok, "Signed in as \(email)")
+        } else {
+            set(6, .warn, "Not signed in — uploads will be refused")
+        }
+
+        // 8 — security patch: the shipped public key must NOT read installs.
+        set(7, .running, "")
+        let leak = await code(request("rest/v1/installs?select=install_id&limit=1"))
+        switch leak {
+        case 200:       set(7, .fail, "HTTP 200 — the public key can read every install. Run docs/supabase-security-patch.sql")
+        case 401, 403:  set(7, .ok, "HTTP \(leak) — public reads correctly blocked")
+        case 404:       set(7, .warn, "HTTP 404 — table missing")
+        default:        set(7, .warn, "HTTP \(leak)")
+        }
+
+        // 9 — admin key (never printed, only validated)
+        set(8, .running, "")
+        if let cfg = AdminConfig.shared {
+            let ok = await code(request("rest/v1/installs?select=install_id&limit=1", apiKey: cfg.secret))
+            switch ok {
+            case 200:      set(8, .ok, "Valid — admin console enabled")
+            case 401, 403: set(8, .fail, "HTTP \(ok) — key invalid or rotated")
+            default:       set(8, .warn, "HTTP \(ok)")
+            }
+        } else {
+            set(8, .skip, "No config file — admin console hidden")
+        }
+    }
+
+    var summary: String {
+        let fails = checks.filter { $0.state == .fail }.count
+        let warns = checks.filter { $0.state == .warn }.count
+        if checks.isEmpty { return "Not run yet" }
+        if fails > 0 { return "\(fails) failing, \(warns) warning" }
+        if warns > 0 { return "All critical checks pass · \(warns) warning" }
+        return "All checks pass"
+    }
+}
+
+/// The API section in Settings.
+struct APICheckPanel: View {
+    @StateObject private var health = APIHealth()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.gap) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connection").font(.system(size: 15, weight: .semibold)).foregroundStyle(DS.ink)
+                    Text(health.checks.isEmpty ? "Run the checks to test every service LiveWall uses."
+                                               : health.summary)
+                        .font(.system(size: 11.5)).foregroundStyle(DS.ink2)
+                }
+                Spacer()
+                if health.running { ProgressView().scaleEffect(0.6) }
+                Button(health.checks.isEmpty ? "Run Checks" : "Run Again") { health.run() }
+                    .buttonStyle(DSPrimaryButton()).disabled(health.running)
+            }
+
+            if !health.checks.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(health.checks.enumerated()), id: \.element.id) { i, c in
+                        if i > 0 { Divider().overlay(DS.hairline) }
+                        HStack(alignment: .top, spacing: 11) {
+                            icon(for: c.state)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.name).font(.system(size: 12.5, weight: .medium)).foregroundStyle(DS.ink)
+                                Text(c.note.isEmpty ? c.detail : c.note)
+                                    .font(.system(size: 11)).foregroundStyle(color(for: c.state))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 11)
+                    }
+                }
+                .padding(.horizontal, DS.gap)
+                .glass()
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Install ID").font(.system(size: 11, weight: .semibold)).foregroundStyle(DS.ink2)
+                    Text(Analytics.installID)
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.ink3)
+                        .textSelection(.enabled)
+                    Text(Analytics.supabaseURL)
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(DS.ink3)
+                        .textSelection(.enabled)
+                }
+                .padding(DS.gap).frame(maxWidth: .infinity, alignment: .leading).glass()
+            }
+        }
+    }
+
+    private func color(for s: APIHealth.State) -> Color {
+        switch s {
+        case .ok:   return DS.live
+        case .warn: return Color(red: 0.85, green: 0.55, blue: 0.1)
+        case .fail: return Color(red: 0.86, green: 0.25, blue: 0.3)
+        default:    return DS.ink2
+        }
+    }
+
+    @ViewBuilder private func icon(for s: APIHealth.State) -> some View {
+        switch s {
+        case .ok:      Image(systemName: "checkmark.circle.fill").foregroundStyle(DS.live)
+        case .warn:    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(red: 0.85, green: 0.55, blue: 0.1))
+        case .fail:    Image(systemName: "xmark.circle.fill").foregroundStyle(Color(red: 0.86, green: 0.25, blue: 0.3))
+        case .skip:    Image(systemName: "minus.circle").foregroundStyle(DS.ink3)
+        case .running: ProgressView().scaleEffect(0.5).frame(width: 16, height: 16)
+        case .pending: Image(systemName: "circle").foregroundStyle(DS.ink3)
         }
     }
 }
