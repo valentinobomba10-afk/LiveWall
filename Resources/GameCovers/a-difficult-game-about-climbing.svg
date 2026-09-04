@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="A Difficult Game About Climbing">
+  <defs>
+    <linearGradient id="rock" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6b5642"/><stop offset=".55" stop-color="#43362a"/><stop offset="1" stop-color="#241d16"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffb45e"/><stop offset="1" stop-color="#7b4bb5"/>
+    </linearGradient>
+    <filter id="sh" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#120d09" flood-opacity=".5"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" fill="url(#sky)"/>
+  <circle cx="512" cy="86" r="46" fill="#fff2c4" opacity=".85"/>
+  <path d="M0 360V96l78 34 62-48 74 66 68-52 84 74 66-44 88 70 120-38v198Z" fill="url(#rock)"/>
+  <g stroke="#2b2119" stroke-width="5" opacity=".55" fill="none">
+    <path d="M96 176l40 54-24 62M300 190l38 44-18 58M470 208l34 40-20 54"/>
+  </g>
+  <g fill="#8d7358" opacity=".8">
+    <rect x="150" y="214" width="42" height="14" rx="7"/>
+    <rect x="330" y="182" width="46" height="14" rx="7"/>
+    <rect x="240" y="272" width="52" height="14" rx="7"/>
+  </g>
+  <g filter="url(#sh)" transform="translate(214 158)">
+    <circle cx="46" cy="30" r="24" fill="#ffd9a8"/>
+    <rect x="30" y="52" width="34" height="56" rx="14" fill="#2f7dd1"/>
+    <path d="M40 62 -8 6" stroke="#ffd9a8" stroke-width="15" stroke-linecap="round"/>
+    <path d="M56 62 118 14" stroke="#ffd9a8" stroke-width="15" stroke-linecap="round"/>
+    <path d="M38 106 22 158M58 106 74 158" stroke="#2b3a52" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  <g font-family="Arial Black, Impact, sans-serif" font-weight="900" text-anchor="middle">
+    <text x="320" y="316" font-size="44" fill="#120d09" stroke="#120d09" stroke-width="12" stroke-linejoin="round">CLIMBING</text>
+    <text x="320" y="316" font-size="44" fill="#ffd166">CLIMBING</text>
+    <text x="320" y="344" font-size="17" fill="#f6e7cf" font-family="Arial, sans-serif">A DIFFICULT GAME ABOUT</text>
+  </g>
+</svg>

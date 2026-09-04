@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Angry Birds 2">
+  <defs>
+    <linearGradient id="sk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fd4ff"/><stop offset="1" stop-color="#d8f3ff"/>
+    </linearGradient>
+    <filter id="sh2" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="7" stdDeviation="5" flood-color="#0d2b3a" flood-opacity=".38"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" fill="url(#sk)"/>
+  <ellipse cx="120" cy="86" rx="62" ry="26" fill="#fff" opacity=".8"/>
+  <ellipse cx="470" cy="60" rx="78" ry="30" fill="#fff" opacity=".7"/>
+  <rect y="296" width="640" height="64" fill="#68c04a"/>
+  <rect y="296" width="640" height="12" fill="#8ada64"/>
+  <g filter="url(#sh2)">
+    <rect x="392" y="196" width="26" height="102" rx="6" fill="#c98a3d"/>
+    <rect x="486" y="196" width="26" height="102" rx="6" fill="#c98a3d"/>
+    <rect x="380" y="170" width="144" height="26" rx="8" fill="#e0a552"/>
+    <rect x="404" y="120" width="96" height="48" rx="10" fill="#7fd8ef"/>
+    <circle cx="452" cy="238" r="30" fill="#6fbf3f"/>
+    <circle cx="442" cy="232" r="7" fill="#fff"/><circle cx="462" cy="232" r="7" fill="#fff"/>
+    <circle cx="442" cy="233" r="3.5" fill="#20321a"/><circle cx="462" cy="233" r="3.5" fill="#20321a"/>
+  </g>
+  <g filter="url(#sh2)">
+    <path d="M96 300V186" stroke="#8a5a2b" stroke-width="16" stroke-linecap="round"/>
+    <path d="M96 190 62 150M96 190l34-40" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/>
+    <path d="M66 154c26 18 56 18 62 0" stroke="#4a2f16" stroke-width="7" fill="none"/>
+  </g>
+  <g fill="none" stroke="#fff" stroke-width="6" stroke-dasharray="14 12" opacity=".9">
+    <path d="M120 168C196 78 300 74 386 150"/>
+  </g>
+  <g filter="url(#sh2)" transform="translate(232 92)">
+    <circle r="40" fill="#e8342c"/>
+    <circle cx="-13" cy="-8" r="10" fill="#fff"/><circle cx="13" cy="-8" r="10" fill="#fff"/>
+    <circle cx="-11" cy="-7" r="5" fill="#20140f"/><circle cx="15" cy="-7" r="5" fill="#20140f"/>
+    <path d="M-26-26 -6-18M26-26 6-18" stroke="#20140f" stroke-width="6" stroke-linecap="round"/>
+    <path d="M-8 14h24l-12 14Z" fill="#f2a13c"/>
+  </g>
+  <g font-family="Arial Black, Impact, sans-serif" font-weight="900" text-anchor="middle">
+    <text x="320" y="60" font-size="50" fill="#20140f" stroke="#20140f" stroke-width="13" stroke-linejoin="round">ANGRY BIRDS 2</text>
+    <text x="320" y="60" font-size="50" fill="#ffd23f">ANGRY BIRDS 2</text>
+  </g>
+</svg>

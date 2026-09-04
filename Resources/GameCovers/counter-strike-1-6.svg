@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Counter-Strike 1.6">
+  <defs>
+    <linearGradient id="dust" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8b47a"/><stop offset=".6" stop-color="#8f6f42"/><stop offset="1" stop-color="#3b2d1c"/>
+    </linearGradient>
+    <filter id="sh3" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="6" flood-color="#120b04" flood-opacity=".55"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" fill="url(#dust)"/>
+  <g opacity=".26" fill="#2b1f11">
+    <rect x="40" y="150" width="120" height="150"/><rect x="470" y="120" width="140" height="180"/>
+    <rect x="196" y="176" width="90" height="124"/>
+  </g>
+  <g filter="url(#sh3)">
+    <rect x="88" y="222" width="104" height="80" rx="8" fill="#b3833f"/>
+    <path d="M88 246h104M140 222v80" stroke="#7d5a29" stroke-width="7"/>
+    <rect x="430" y="200" width="120" height="100" rx="8" fill="#a97b39"/>
+    <path d="M430 232h120M490 200v100" stroke="#75531f" stroke-width="7"/>
+  </g>
+  <g filter="url(#sh3)" transform="translate(238 176)">
+    <rect x="0" y="26" width="150" height="20" rx="6" fill="#2a2f36"/>
+    <rect x="120" y="14" width="52" height="18" rx="5" fill="#3a424c"/>
+    <rect x="26" y="46" width="26" height="34" rx="6" fill="#2a2f36"/>
+    <rect x="52" y="10" width="44" height="18" rx="5" fill="#3a424c"/>
+    <path d="M8 46 -22 78" stroke="#2a2f36" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  <g fill="none" stroke="#f7e7bf" stroke-width="6" opacity=".95">
+    <circle cx="486" cy="118" r="34"/>
+    <path d="M486 66v28M486 142v28M434 118h28M510 118h28"/>
+  </g>
+  <g font-family="Arial Black, Impact, sans-serif" font-weight="900" text-anchor="middle">
+    <text x="320" y="66" font-size="48" fill="#150d05" stroke="#150d05" stroke-width="13" stroke-linejoin="round">COUNTER-STRIKE</text>
+    <text x="320" y="66" font-size="48" fill="#ffcf5c">COUNTER-STRIKE</text>
+    <text x="320" y="336" font-size="26" fill="#f7e7bf" font-family="Arial, sans-serif">1.6 &#183; CLASSIC TACTICAL FPS</text>
+  </g>
+</svg>
