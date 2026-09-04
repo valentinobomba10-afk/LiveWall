@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Among Us game cover</title>
+  <desc id="desc">Colorful crewmate-style space characters floating in a spaceship hallway.</desc>
+  <defs>
+    <linearGradient id="space" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101935"/>
+      <stop offset=".55" stop-color="#1f2d5c"/>
+      <stop offset="1" stop-color="#0b1024"/>
+    </linearGradient>
+    <linearGradient id="visor" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5ffff"/>
+      <stop offset=".48" stop-color="#82dbff"/>
+      <stop offset="1" stop-color="#2e73a7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#030711" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#space)"/>
+  <g opacity=".5">
+    <circle cx="126" cy="92" r="3" fill="#fff"/>
+    <circle cx="278" cy="196" r="2" fill="#fff"/>
+    <circle cx="1032" cy="126" r="3" fill="#fff"/>
+    <circle cx="1148" cy="260" r="2" fill="#fff"/>
+    <circle cx="842" cy="610" r="3" fill="#fff"/>
+    <circle cx="456" cy="594" r="2" fill="#fff"/>
+  </g>
+  <path d="M0 520h1280v200H0Z" fill="#dfe7f8"/>
+  <path d="M0 548c190 50 358 52 548 6 208-50 390-42 732 42v124H0Z" fill="#b9c8e2"/>
+  <path d="M0 424h1280" stroke="#6d7ea6" stroke-width="24" opacity=".55"/>
+  <path d="M80 424h1120" stroke="#e8f0ff" stroke-width="8" opacity=".85"/>
+  <g transform="translate(305 184)" filter="url(#shadow)">
+    <path d="M122 62c74 0 128 52 128 128v146c0 68-50 118-118 118H98C42 454 0 412 0 356V178C0 110 54 62 122 62Z" fill="#f04455"/>
+    <path d="M72 412v76c0 34 25 59 59 59h18c33 0 58-25 58-58v-78Z" fill="#b92334"/>
+    <path d="M22 226h-44c-24 0-42 18-42 42v80c0 24 18 42 42 42H22Z" fill="#c72e3f"/>
+    <rect x="86" y="116" width="158" height="82" rx="41" fill="url(#visor)" stroke="#16233f" stroke-width="14"/>
+    <path d="M122 132h84" stroke="#fff" stroke-width="12" stroke-linecap="round" opacity=".72"/>
+  </g>
+  <g transform="translate(766 224) scale(.82)" filter="url(#shadow)">
+    <path d="M122 62c74 0 128 52 128 128v146c0 68-50 118-118 118H98C42 454 0 412 0 356V178C0 110 54 62 122 62Z" fill="#39c56b"/>
+    <path d="M72 412v76c0 34 25 59 59 59h18c33 0 58-25 58-58v-78Z" fill="#20904a"/>
+    <path d="M22 226h-44c-24 0-42 18-42 42v80c0 24 18 42 42 42H22Z" fill="#249d51"/>
+    <rect x="86" y="116" width="158" height="82" rx="41" fill="url(#visor)" stroke="#16233f" stroke-width="14"/>
+    <path d="M122 132h84" stroke="#fff" stroke-width="12" stroke-linecap="round" opacity=".72"/>
+  </g>
+  <g transform="translate(166 448) rotate(-9)" opacity=".9" filter="url(#shadow)">
+    <path d="M80 28c42 0 72 30 72 74v84c0 38-28 66-66 66H62c-34 0-60-26-60-60V96c0-40 32-68 78-68Z" fill="#ffc247"/>
+    <rect x="55" y="60" width="90" height="48" rx="24" fill="url(#visor)" stroke="#16233f" stroke-width="9"/>
+  </g>
+  <g transform="translate(1006 444) rotate(11)" opacity=".9" filter="url(#shadow)">
+    <path d="M80 28c42 0 72 30 72 74v84c0 38-28 66-66 66H62c-34 0-60-26-60-60V96c0-40 32-68 78-68Z" fill="#7b61ff"/>
+    <rect x="55" y="60" width="90" height="48" rx="24" fill="url(#visor)" stroke="#16233f" stroke-width="9"/>
+  </g>
+  <text x="640" y="120" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="86" fill="#ffffff" stroke="#090f20" stroke-width="14" paint-order="stroke">AMONG US</text>
+  <text x="640" y="664" text-anchor="middle" font-family="Arial, sans-serif" font-size="36" font-weight="900" fill="#172033">Crewmate strategy</text>
+</svg>

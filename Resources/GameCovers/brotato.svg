@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Brotato">
+  <defs>
+    <radialGradient id="spot" cx="50%" cy="48%" r="65%">
+      <stop offset="0" stop-color="#68626c"/>
+      <stop offset=".55" stop-color="#27242b"/>
+      <stop offset="1" stop-color="#09090b"/>
+    </radialGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="5" flood-color="#000" flood-opacity=".75"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" fill="url(#spot)"/>
+  <g opacity=".22" fill="none" stroke="#0b0a0e" stroke-width="7" stroke-linecap="round">
+    <path d="M54 44c25 8 29 31 4 50M117 82c30 2 43 28 18 47M512 56c31 7 39 34 13 57M580 108c27 0 42 20 30 44M67 292c23-22 56-20 69 10M500 293c33-20 69-10 73 24"/>
+    <circle cx="120" cy="145" r="14"/>
+    <circle cx="483" cy="137" r="17"/>
+    <path d="M270 75c18-21 41-20 57 1M329 281c20 28 50 26 64 0"/>
+  </g>
+  <ellipse cx="320" cy="284" rx="197" ry="50" fill="#8e7b55" opacity=".3"/>
+  <g filter="url(#shadow)" font-family="Arial Black, Impact, sans-serif" font-weight="900">
+    <text x="114" y="124" font-size="103" fill="#050505" stroke="#050505" stroke-width="22" stroke-linejoin="round">BRO</text>
+    <text x="337" y="124" font-size="103" fill="#050505" stroke="#050505" stroke-width="22" stroke-linejoin="round">TATO</text>
+    <text x="114" y="124" font-size="103" fill="#fff">BRO</text>
+    <text x="337" y="124" font-size="103" fill="#ef3c30">TATO</text>
+  </g>
+  <g filter="url(#shadow)">
+    <g transform="translate(42 196)">
+      <ellipse cx="30" cy="35" rx="31" ry="39" fill="#f7f7f7" stroke="#060606" stroke-width="9"/>
+      <path d="M7 48l-20 24M51 49l18 22" stroke="#060606" stroke-width="8" stroke-linecap="round"/>
+      <path d="M-2 18l-21-14M62 23l24-4" stroke="#060606" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="20" cy="31" r="5" fill="#080808"/>
+      <circle cx="40" cy="31" r="5" fill="#080808"/>
+      <path d="M21 49c10 7 20 7 29 0" stroke="#080808" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(132 205)">
+      <ellipse cx="30" cy="35" rx="31" ry="39" fill="#f7f7f7" stroke="#060606" stroke-width="9"/>
+      <rect x="-3" y="23" width="67" height="15" rx="7" fill="#111"/>
+      <path d="M7 50l-17 26M52 50l20 25" stroke="#060606" stroke-width="8" stroke-linecap="round"/>
+      <path d="M65 21l30-11" stroke="#060606" stroke-width="8" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(232 193)">
+      <ellipse cx="36" cy="42" rx="38" ry="47" fill="#fff" stroke="#050505" stroke-width="10"/>
+      <path d="M6 48l-24 33M66 50l30 28" stroke="#050505" stroke-width="9" stroke-linecap="round"/>
+      <path d="M18 22c15-18 49-22 71-6" stroke="#ea372c" stroke-width="14" stroke-linecap="round"/>
+      <circle cx="25" cy="42" r="6" fill="#070707"/>
+      <circle cx="50" cy="42" r="6" fill="#070707"/>
+      <path d="M32 61c8 4 16 4 24 0" stroke="#070707" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path d="M80 19l44-43" stroke="#c7eff6" stroke-width="11" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(351 205)">
+      <ellipse cx="35" cy="35" rx="34" ry="41" fill="#fafafa" stroke="#050505" stroke-width="9"/>
+      <path d="M8 50l-18 26M59 49l23 25" stroke="#050505" stroke-width="8" stroke-linecap="round"/>
+      <rect x="13" y="25" width="47" height="13" rx="7" fill="#111"/>
+      <path d="M49 18l36-52" stroke="#c7eff6" stroke-width="10" stroke-linecap="round"/>
+      <path d="M27 52c13 13 30 13 43 0" stroke="#050505" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(455 198)">
+      <ellipse cx="31" cy="38" rx="32" ry="42" fill="#f5f5f5" stroke="#060606" stroke-width="9"/>
+      <circle cx="21" cy="38" r="5" fill="#070707"/>
+      <circle cx="43" cy="38" r="5" fill="#070707"/>
+      <path d="M18 56c14 9 27 9 41-1" stroke="#cc1f25" stroke-width="6" fill="none" stroke-linecap="round"/>
+      <path d="M6 52l-23 29M55 50l21 30" stroke="#060606" stroke-width="8" stroke-linecap="round"/>
+      <path d="M69 22l48-4" stroke="#060606" stroke-width="9" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

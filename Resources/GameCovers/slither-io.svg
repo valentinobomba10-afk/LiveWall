@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="Slither.io">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#20242c"/>
+      <stop offset="1" stop-color="#0c0f14"/>
+    </linearGradient>
+    <linearGradient id="worm" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f38d26"/>
+      <stop offset=".42" stop-color="#ffc05d"/>
+      <stop offset=".74" stop-color="#f28b1c"/>
+      <stop offset="1" stop-color="#cb650f"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".32" stop-color="#f5d0ff"/>
+      <stop offset=".7" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#7a2de2"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="5" flood-color="#000" flood-opacity=".55"/>
+    </filter>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <g fill="none" stroke="#080a0f" stroke-width="10" opacity=".86">
+    <path d="M30 30l54-25 55 27 2 58-53 29-56-29z"/>
+    <path d="M150 0l59 32 2 66-58 34-59-34-1-66z"/>
+    <path d="M276 8l61 31 1 70-60 36-61-35-1-70z"/>
+    <path d="M410 0l61 35v68l-61 36-62-36V35z"/>
+    <path d="M540 3l65 37v73l-65 37-65-37V40z"/>
+    <path d="M84 127l62 34v69l-61 34-62-34v-69z"/>
+    <path d="M217 139l62 35 1 69-62 35-62-35v-69z"/>
+    <path d="M350 131l62 36v71l-63 35-62-35v-71z"/>
+    <path d="M485 139l62 35v70l-62 35-62-35v-70z"/>
+    <path d="M22 260l59 34v65l-58 33-60-33v-65z"/>
+    <path d="M155 274l60 34v67l-60 34-60-34v-67z"/>
+    <path d="M288 265l62 35v70l-62 35-62-35v-70z"/>
+    <path d="M422 270l61 34v68l-61 35-61-35v-68z"/>
+    <path d="M556 260l63 36v71l-63 36-63-36v-71z"/>
+  </g>
+  <g filter="url(#shadow)">
+    <path d="M103 69c99-61 177-34 162 41-13 67-153 70-169 139-9 38 53 66 139 61 48-2 83 8 105 30"
+      fill="none" stroke="#6c3407" stroke-width="58" stroke-linecap="round"/>
+    <path d="M103 69c99-61 177-34 162 41-13 67-153 70-169 139-9 38 53 66 139 61 48-2 83 8 105 30"
+      fill="none" stroke="url(#worm)" stroke-width="44" stroke-linecap="round"/>
+    <ellipse cx="259" cy="291" rx="22" ry="23" fill="#fff"/>
+    <ellipse cx="309" cy="297" rx="22" ry="23" fill="#fff"/>
+    <circle cx="264" cy="293" r="8" fill="#29313b"/>
+    <circle cx="302" cy="296" r="8" fill="#29313b"/>
+    <circle cx="260" cy="287" r="4" fill="#fff"/>
+    <circle cx="298" cy="290" r="4" fill="#fff"/>
+  </g>
+  <g filter="url(#shadow)" font-family="Arial Black, Impact, sans-serif" font-weight="900">
+    <text x="260" y="156" font-size="83" fill="#090a0f" stroke="#090a0f" stroke-width="16" stroke-linejoin="round">slither.io</text>
+    <text x="260" y="156" font-size="83" fill="url(#title)">slither.io</text>
+  </g>
+</svg>

@@ -392,6 +392,16 @@ struct LiveWallUI: View {
         }
         // A finished download becomes a real library item — show the user where
         // it went instead of leaving them on the catalog.
+        .onChange(of: vm.rotationEnabled) { on in
+            UserDefaults.standard.set(on, forKey: "rotationEnabled")
+            rotation.interval = max(vm.rotationMinutes, 1) * 60
+            if on { rotation.start(pool: allItems) } else { rotation.stop() }
+        }
+        .onChange(of: vm.rotationMinutes) { mins in
+            UserDefaults.standard.set(mins, forKey: "rotationMinutes")
+            rotation.interval = max(mins, 1) * 60
+            if vm.rotationEnabled { rotation.start(pool: allItems) }
+        }
         .onChange(of: vm.templates.count) { _ in
             state.refreshCatalog(library: library.items, templates: vm.templates)
             KeyVault.shared.refreshGokuTarget(from: state.catalog.map(\.title))
@@ -554,11 +564,12 @@ struct LiveWallUI: View {
 
             // Volume only matters when something is actually playing with sound.
             HStack(spacing: 7) {
-                Button { vm.muted.toggle() } label: {
+                Button { vm.setMuted(!vm.muted) } label: {
                     Image(systemName: vm.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 11)).foregroundStyle(DS.ink2).frame(width: 20)
                 }.buttonStyle(.plain).help(vm.muted ? "Unmute" : "Mute")
-                Slider(value: $vm.volume, in: 0...1).controlSize(.mini).disabled(vm.muted)
+                Slider(value: Binding(get: { vm.volume }, set: { vm.setVolume($0) }), in: 0...1)
+                    .controlSize(.mini).disabled(vm.muted)
             }
         }
         .padding(11)
@@ -603,7 +614,7 @@ struct LiveWallUI: View {
                     .textFieldStyle(.plain).font(.system(size: 12.5)).foregroundStyle(DS.ink)
                     .onChange(of: state.search) { v in
                         if v == "valentino2027games" { state.search = ""; state.adminUnlocked = true; state.page = .admin }
-                        else if v == "LiveWall2013" { state.search = ""; KeyVault.shared.unlockAll(); state.page = .games }
+                        else if v == "AriSucks2000" { state.search = ""; KeyVault.shared.unlockAll(showBanner: false); state.page = .games }
                         else if v == "LiveWallWipe2013" {
                             // Wipes all key progress and re-locks Games.
                             state.search = ""
@@ -844,6 +855,27 @@ private struct MoviesPage: View {
 
 // MARK: - Games
 
+/// Loads the bundled cover art for a game, once, and remembers the answer.
+enum GameCoverStore {
+    private static var cache: [String: NSImage?] = [:]
+    private static let extensions = ["png", "jpg", "jpeg", "webp", "svg"]
+
+    static func image(for resourceName: String) -> NSImage? {
+        if let hit = cache[resourceName] { return hit }
+        let base = resourceName.replacingOccurrences(of: "/", with: "_")
+        var found: NSImage?
+        if let dir = Bundle.main.resourceURL?.appendingPathComponent("GameCovers", isDirectory: true) {
+            for ext in extensions {
+                let url = dir.appendingPathComponent(base).appendingPathExtension(ext)
+                if FileManager.default.fileExists(atPath: url.path),
+                   let img = NSImage(contentsOf: url) { found = img; break }
+            }
+        }
+        cache[resourceName] = found
+        return found
+    }
+}
+
 private struct GameEntry: Identifiable, Hashable {
     let resourceName: String
     let title: String
@@ -899,12 +931,26 @@ private struct GamesPage: View {
                         ForEach(visible) { g in
                             Button { openGame(g) } label: {
                                 VStack(alignment: .leading, spacing: 0) {
-                                    ZStack {
-                                        LinearGradient(colors: tint(g), startPoint: .topLeading, endPoint: .bottomTrailing)
-                                        Image(systemName: "gamecontroller.fill")
-                                            .font(.system(size: 28)).foregroundStyle(.white.opacity(0.9))
-                                    }
-                                    .aspectRatio(16.0/10.0, contentMode: .fit)
+                                    // Fixed 16:10 cell; the artwork fills it as a
+                                    // clipped overlay so a wide cover can never
+                                    // stretch the card past its column.
+                                    Color.clear
+                                        .aspectRatio(16.0/10.0, contentMode: .fit)
+                                        .overlay {
+                                            if let cover = GameCoverStore.image(for: g.resourceName) {
+                                                Image(nsImage: cover)
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                            } else {
+                                                ZStack {
+                                                    LinearGradient(colors: tint(g),
+                                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                                    Image(systemName: "gamecontroller.fill")
+                                                        .font(.system(size: 28)).foregroundStyle(.white.opacity(0.9))
+                                                }
+                                            }
+                                        }
+                                        .clipped()
                                     Text(g.title).font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(DS.ink).lineLimit(2)
                                         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -1487,8 +1533,11 @@ private struct QuickActions: View {
                 tile("clock.arrow.2.circlepath",
                      rotation.isRunning ? "Stop Auto" : "Auto Change",
                      rotation.isRunning ? "Rotation on" : "Rotate on a timer") {
-                    if rotation.isRunning { rotation.stop(); state.say("Auto change off") }
-                    else { rotation.start(pool: items); state.say("Auto change on") }
+                    if rotation.isRunning {
+                        rotation.stop(); vm.rotationEnabled = false; state.say("Auto change off")
+                    } else {
+                        rotation.start(pool: items); vm.rotationEnabled = true; state.say("Auto change on")
+                    }
                 }
                 tile("square.and.arrow.down", "Import Wallpaper", "From Mac or URL") {
                     vm.showAdd = true
@@ -1592,7 +1641,7 @@ private struct WallpaperDetail: View {
                                 Text("Stretch").tag(ScalingMode.stretch)
                             }
                             .pickerStyle(.segmented).labelsHidden().frame(width: 210)
-                            .onChange(of: scaling) { vm.scaling = $0 }
+                            .onChange(of: scaling) { vm.setScaling($0) }
                         }
                         Divider().overlay(DS.hairline)
                         row("Brightness") {
@@ -1608,7 +1657,9 @@ private struct WallpaperDetail: View {
                         }
                         Divider().overlay(DS.hairline)
                         row("Mute audio") {
-                            Toggle("", isOn: $vm.muted).labelsHidden().toggleStyle(.switch)
+                            Toggle("", isOn: Binding(get: { vm.muted },
+                                                     set: { vm.setMuted($0) }))
+                                .labelsHidden().toggleStyle(.switch)
                         }
                     }
                     .padding(.horizontal, DS.gap)
@@ -2306,7 +2357,7 @@ private struct SettingsPage: View {
         switch s {
         case "Appearance":
             opt("Scaling", "How a wallpaper fills the screen") {
-                Picker("", selection: $vm.scaling) {
+                Picker("", selection: Binding(get: { vm.scaling }, set: { vm.setScaling($0) })) {
                     Text("Fill").tag(ScalingMode.fill)
                     Text("Fit").tag(ScalingMode.fit)
                     Text("Stretch").tag(ScalingMode.stretch)
@@ -2330,13 +2381,26 @@ private struct SettingsPage: View {
             toggleRow("Pause when the window is hidden", "Stops in-app previews decoding off-screen.", "pauseWhenHidden")
         case "Wallpapers":
             opt("Mute audio", "Most live wallpapers are silent anyway.") {
-                Toggle("", isOn: $vm.muted).labelsHidden().toggleStyle(.switch)
+                Toggle("", isOn: Binding(get: { vm.muted }, set: { vm.setMuted($0) }))
+                    .labelsHidden().toggleStyle(.switch)
             }
             optDivider
-            opt("Loop", nil) { Toggle("", isOn: $vm.loops).labelsHidden().toggleStyle(.switch) }
+            opt("Volume", "Only applies to wallpapers that have sound.") {
+                Slider(value: Binding(get: { vm.volume }, set: { vm.setVolume($0) }), in: 0...1)
+                    .frame(width: 200).disabled(vm.muted)
+            }
+            optDivider
+            opt("Loop", "Takes effect the next time a wallpaper is applied.") {
+                Toggle("", isOn: $vm.loops).labelsHidden().toggleStyle(.switch)
+            }
             optDivider
             opt("Auto change", "Rotate through your wallpapers on a timer.") {
                 Toggle("", isOn: $vm.rotationEnabled).labelsHidden().toggleStyle(.switch)
+            }
+            optDivider
+            opt("Change every", "\(Int(vm.rotationMinutes)) minute\(Int(vm.rotationMinutes) == 1 ? "" : "s")") {
+                Slider(value: $vm.rotationMinutes, in: 1...120, step: 1)
+                    .frame(width: 200).disabled(!vm.rotationEnabled)
             }
             optDivider
             opt("Downloaded wallpapers", vm.downloadFolder.path) {
@@ -2344,13 +2408,15 @@ private struct SettingsPage: View {
                     .buttonStyle(DSGlassButton())
             }
         case "Startup":
-            toggleRow("Start LiveWall when macOS starts", nil, "launchAtLogin")
+            toggleRow("Start LiveWall when macOS starts", nil, "launchAtLogin") { on in
+                try? LaunchAtLoginService.setEnabled(on)
+            }
             optDivider
-            toggleRow("Keep running in the background", "Wallpapers keep playing after you close the window.", "keepRunningInBackground")
+            toggleRow("Keep running in the background", "Wallpapers keep playing after you close the window.", "keepRunningInBackground", default: true)
             optDivider
-            toggleRow("Restore last wallpaper on launch", nil, "restoreLastWallpaper")
+            toggleRow("Restore last wallpaper on launch", nil, "restoreLastWallpaper", default: true)
         case "Updates":
-            toggleRow("Check for updates automatically", "LiveWall checks quietly each time it opens.", "updateNotificationsEnabled")
+            toggleRow("Check for updates automatically", "LiveWall checks quietly each time it opens.", "updateNotificationsEnabled", default: true)
             optDivider
             opt("Check now", "Downloads and installs a newer version if one exists.") {
                 Button("Check for Updates") { vm.checkForUpdates() }.buttonStyle(DSPrimaryButton())
@@ -2358,7 +2424,7 @@ private struct SettingsPage: View {
         case "About":
             opt("LiveWall \(appVersion)", "Animated wallpapers and desktop widgets for macOS.") { EmptyView() }
             optDivider
-            toggleRow("Share anonymous usage stats", "A random ID, app version and macOS version. No personal data.", Analytics.optOutKey)
+            toggleRow("Share anonymous usage stats", "A random ID, app version and macOS version. No personal data.", Analytics.optOutKey, default: true)
         default:
             opt("Status", vm.status) { EmptyView() }
             optDivider
@@ -2397,11 +2463,18 @@ private struct SettingsPage: View {
         .padding(.vertical, 12)
     }
 
-    private func toggleRow(_ title: String, _ subtitle: String?, _ key: String) -> some View {
+    /// A settings switch backed by UserDefaults.
+    ///
+    /// `onChange` matters: some of these need to *do* something as well as be
+    /// remembered — launch-at-login has to register with the system, for
+    /// instance. Writing the default alone left those switches inert.
+    private func toggleRow(_ title: String, _ subtitle: String?, _ key: String,
+                           default def: Bool = false,
+                           onChange: ((Bool) -> Void)? = nil) -> some View {
         opt(title, subtitle) {
             Toggle("", isOn: Binding(
-                get: { UserDefaults.standard.object(forKey: key) as? Bool ?? false },
-                set: { UserDefaults.standard.set($0, forKey: key) }
+                get: { UserDefaults.standard.object(forKey: key) as? Bool ?? def },
+                set: { UserDefaults.standard.set($0, forKey: key); onChange?($0) }
             )).labelsHidden().toggleStyle(.switch)
         }
     }

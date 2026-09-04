@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 225" role="img" aria-labelledby="title desc">
+  <title id="title">Spacebar Clicker cover</title>
+  <desc id="desc">A white cover with blue Spacebar text, a keyboard spacebar key, and red Clicker text.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="48%" r="76%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="70%" stop-color="#f3f3f5"/>
+      <stop offset="100%" stop-color="#e7e8ee"/>
+    </radialGradient>
+    <linearGradient id="key" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0b0b0d"/>
+      <stop offset="17%" stop-color="#212124"/>
+      <stop offset="28%" stop-color="#f5f5f5"/>
+      <stop offset="50%" stop-color="#c8c8c8"/>
+      <stop offset="72%" stop-color="#787878"/>
+      <stop offset="100%" stop-color="#0f0f11"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="225" fill="#1e2b76"/>
+  <rect x="3" y="3" width="394" height="219" fill="url(#bg)"/>
+  <text x="200" y="53" text-anchor="middle" fill="#12a8dc" font-family="Arial Black, Arial, sans-serif" font-size="36" font-weight="900">SPACEBAR</text>
+  <rect x="100" y="82" width="200" height="37" rx="3" fill="#050507"/>
+  <rect x="104" y="87" width="192" height="27" rx="2" fill="url(#key)"/>
+  <text x="200" y="105" text-anchor="middle" fill="#ffffff" font-family="Arial Black, Arial, sans-serif" font-size="15" font-weight="900">SPACEBAR</text>
+  <text x="200" y="172" text-anchor="middle" fill="#ed1c2d" font-family="Arial Black, Arial, sans-serif" font-size="36" font-weight="900">CLICKER</text>
+</svg>

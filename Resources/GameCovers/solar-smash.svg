@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Solar Smash game cover</title>
+  <desc id="desc">A dramatic planet in space with beams and orbiting debris.</desc>
+  <defs>
+    <radialGradient id="space" cx="50%" cy="45%" r="70%">
+      <stop offset="0" stop-color="#21336b"/>
+      <stop offset=".52" stop-color="#0d1635"/>
+      <stop offset="1" stop-color="#050812"/>
+    </radialGradient>
+    <radialGradient id="planet" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#9ee7ff"/>
+      <stop offset=".45" stop-color="#2874ff"/>
+      <stop offset=".72" stop-color="#112a75"/>
+      <stop offset="1" stop-color="#091235"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#space)"/>
+  <g fill="#ffffff">
+    <circle cx="132" cy="104" r="2"/>
+    <circle cx="228" cy="240" r="3"/>
+    <circle cx="1028" cy="118" r="3"/>
+    <circle cx="1128" cy="290" r="2"/>
+    <circle cx="912" cy="586" r="2"/>
+    <circle cx="402" cy="560" r="3"/>
+    <circle cx="702" cy="86" r="2"/>
+  </g>
+  <circle cx="646" cy="386" r="204" fill="url(#planet)"/>
+  <path d="M474 290c75 56 174 76 298 61 54-7 98-18 132-34" fill="none" stroke="#72e4ff" stroke-width="10" opacity=".5"/>
+  <path d="M768 216c-118 28-188 93-211 193-11 47-6 96 13 146" fill="none" stroke="#ffffff" stroke-width="8" opacity=".38"/>
+  <path d="M838 146 676 310" stroke="#ff4b4b" stroke-width="16" stroke-linecap="round"/>
+  <path d="M850 128 758 250" stroke="#ffd766" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="676" cy="310" r="32" fill="#ff784f"/>
+  <circle cx="676" cy="310" r="70" fill="none" stroke="#ff784f" stroke-width="8" opacity=".42"/>
+  <g fill="#9aa7c5">
+    <path d="m840 500 34-12 20 30-36 14Z"/>
+    <path d="m394 362 38-18 24 24-27 34Z"/>
+    <path d="m762 604 26-20 30 20-18 31Z"/>
+  </g>
+  <text x="640" y="112" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="78" fill="#ffffff" stroke="#050812" stroke-width="12" paint-order="stroke">SOLAR SMASH</text>
+  <text x="640" y="656" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="800" fill="#d8e6ff">Planet sandbox destruction</text>
+</svg>
