@@ -288,6 +288,8 @@ struct LiveWallUI: View {
     @StateObject private var setupStore = SetupStore()
     @State private var lastLibraryCount = -1
     @State private var showSubmit = false
+    /// Set while asking whether to remove one of your own wallpapers.
+    @State private var pendingRemove: LibraryItem?
 
     private var allItems: [LibraryItem] { state.catalog.isEmpty ? library.items + vm.templates : state.catalog }
     private var displayID: CGDirectDisplayID {
@@ -421,6 +423,7 @@ struct LiveWallUI: View {
         .sheet(item: $state.detail) { item in
             WallpaperDetail(item: item, vm: vm, displayID: displayID,
                             isFavorite: state.isFavorite(item),
+                            onRemove: isMine(item) ? { confirmRemove(item) } : nil,
                             onFavorite: { state.toggleFavorite(item) },
                             onApplied: { thisOnly in applyWallpaper(item, toThisDisplayOnly: thisOnly) },
                             onClose: { state.detail = nil })
@@ -701,6 +704,29 @@ struct LiveWallUI: View {
 
     private var categories: [String] { state.categoryList }
 
+    /// Only wallpapers you added yourself can be removed — the built-in catalog
+    /// isn't yours to delete.
+    private func isMine(_ item: LibraryItem) -> Bool {
+        library.items.contains { $0.id == item.id }
+    }
+
+    private func confirmRemove(_ item: LibraryItem) {
+        let alert = NSAlert()
+        alert.messageText = "Remove “\(item.title)”?"
+        alert.informativeText = "It's taken out of My Wallpapers. Any file you downloaded stays on your Mac."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if state.current?.id == item.id { state.current = nil }
+        if state.detail?.id == item.id { state.detail = nil }
+        state.favorites.remove(item.id.uuidString)
+        UserDefaults.standard.set(Array(state.favorites), forKey: "favorites")
+        vm.remove(item)
+        state.refreshCatalog(library: library.items, templates: vm.templates)
+        state.say("Removed “\(item.title)”")
+    }
+
     // MARK: Wallpaper browser (Wallpapers / Favorites / My Wallpapers)
 
     private func browser(title: String, items: [LibraryItem], showFilters: Bool) -> some View {
@@ -753,7 +779,8 @@ struct LiveWallUI: View {
                                      running: vm.runningItemID == item.id,
                                      onOpen: { state.open(item) },
                                      onApply: { applyWallpaper(item) },
-                                     onFavorite: { state.toggleFavorite(item) })
+                                     onFavorite: { state.toggleFavorite(item) },
+                                     onRemove: isMine(item) ? { confirmRemove(item) } : nil)
                         }
                     }
                 }
@@ -1056,6 +1083,9 @@ private struct WallTile: View {
     var onOpen: () -> Void
     var onApply: () -> Void
     var onFavorite: () -> Void
+    /// Only your own wallpapers can be removed, so catalog tiles pass nil and
+    /// show no delete affordance at all.
+    var onRemove: (() -> Void)? = nil
     @State private var hover = false
 
     var body: some View {
@@ -1069,9 +1099,21 @@ private struct WallTile: View {
                         PosterView(item: item)
                         LinearGradient(colors: [.black.opacity(0.22), .clear, .clear, .black.opacity(0.45)],
                                        startPoint: .top, endPoint: .bottom)
-                        HStack {
+                        HStack(spacing: 6) {
                             if item.kind != .localImage { ArtBadge(text: "LIVE", dot: true) }
                             Spacer()
+                            if let onRemove {
+                                Button(action: onRemove) {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 24, height: 24)
+                                        .background(.black.opacity(0.42), in: Circle())
+                                        .overlay(Circle().strokeBorder(.white.opacity(0.2)))
+                                }
+                                .buttonStyle(.plain).opacity(hover ? 1 : 0)
+                                .help("Remove from My Wallpapers")
+                            }
                             Button(action: onFavorite) {
                                 Image(systemName: favorite ? "heart.fill" : "heart")
                                     .font(.system(size: 11))
@@ -1119,6 +1161,19 @@ private struct WallTile: View {
         .animation(.easeOut(duration: 0.16), value: hover)
         .onHover { hover = $0 }
         .onTapGesture(perform: onOpen)
+        .contextMenu {
+            Button { onOpen() } label: { Label("Preview", systemImage: "eye") }
+            Button { onApply() } label: { Label("Set as Wallpaper", systemImage: "sparkles.tv") }
+            Button { onFavorite() } label: {
+                Label(favorite ? "Remove from Favorites" : "Add to Favorites", systemImage: "heart")
+            }
+            if let onRemove {
+                Divider()
+                Button(role: .destructive) { onRemove() } label: {
+                    Label("Remove from My Wallpapers", systemImage: "trash")
+                }
+            }
+        }
     }
 }
 
@@ -1580,6 +1635,7 @@ private struct WallpaperDetail: View {
     @ObservedObject var vm: WallpaperViewModel
     let displayID: CGDirectDisplayID
     let isFavorite: Bool
+    var onRemove: (() -> Void)?
     var onFavorite: () -> Void
     var onApplied: (Bool) -> Void   // (thisDisplayOnly)
     var onClose: () -> Void
@@ -1600,6 +1656,11 @@ private struct WallpaperDetail: View {
                     Image(systemName: isFavorite ? "heart.fill" : "heart")
                         .foregroundStyle(isFavorite ? Color(red: 1, green: 0.42, blue: 0.5) : DS.ink2)
                 }.buttonStyle(DSGlassButton())
+                if let onRemove {
+                    Button { onRemove(); onClose() } label: {
+                        Image(systemName: "trash").foregroundStyle(Color(red: 0.86, green: 0.25, blue: 0.3))
+                    }.buttonStyle(DSGlassButton()).help("Remove from My Wallpapers")
+                }
                 Button("Apply Wallpaper") { onApplied(false); onClose() }
                     .buttonStyle(DSPrimaryButton())
             }
