@@ -112,6 +112,7 @@ enum GameWindow {
 
 struct BundledGameView: NSViewRepresentable {
     let resourceName: String
+    let isActive: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -134,7 +135,11 @@ struct BundledGameView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) { }
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        // Keep every tab's page loaded while stopping hidden tabs from playing
+        // audio or video in the background.
+        nsView.setAllMediaPlaybackSuspended(!isActive)
+    }
 
     /// Blocks pop-ups: `window.open` / target=_blank ad windows never spawn.
     final class Coordinator: NSObject, WKUIDelegate {
@@ -716,6 +721,7 @@ struct SettingsSheet: View {
                 }
                 Text("Storage used: \(ByteCountFormatter.string(fromByteCount: vm.downloadStorageBytes, countStyle: .file))").font(.system(size: 11)).foregroundStyle(.secondary)
                 Button("Clear downloaded wallpapers…") { vm.clearDownloadedWallpapers() }
+                MusicDownloadSettings()
             }
 
             section("Power & startup") {

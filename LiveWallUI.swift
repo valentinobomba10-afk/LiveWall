@@ -254,12 +254,13 @@ struct LiveWallUI: View {
     @ObservedObject var library: LibraryStore
     @ObservedObject var movies: MovieStore
     @ObservedObject private var keys = KeyVault.shared
+    @ObservedObject private var musicPlayer = MusicPlaybackController.shared
 
     enum Page: String, CaseIterable, Identifiable {
         case home = "Home", wallpapers = "Wallpapers", widgets = "Widgets",
              favorites = "Favorites", discover = "Discover",
              setups = "My Setups", settings = "Settings",
-             keys = "Keys", mine = "My Wallpapers", movies = "Movies", games = "Games",
+             keys = "Keys", mine = "My Wallpapers", movies = "Movies", games = "Games", music = "Music",
              profile = "Profile", admin = "Admin"
         var id: String { rawValue }
         var icon: String {
@@ -275,11 +276,12 @@ struct LiveWallUI: View {
             case .mine:       return "person.crop.square.fill"
             case .movies:     return "film.fill"
             case .games:      return "gamecontroller.fill"
+            case .music:      return "music.note"
             case .profile:    return "person.crop.circle.fill"
             case .admin:      return "lock.shield.fill"
             }
         }
-        static let groupA: [Page] = [.home, .wallpapers, .widgets, .favorites, .discover]
+        static let groupA: [Page] = [.home, .wallpapers, .widgets, .favorites, .discover, .music]
         static let groupB: [Page] = [.setups, .keys, .settings]
     }
 
@@ -574,11 +576,50 @@ struct LiveWallUI: View {
                 Slider(value: Binding(get: { vm.volume }, set: { vm.setVolume($0) }), in: 0...1)
                     .controlSize(.mini).disabled(vm.muted)
             }
+
+            Rectangle().fill(DS.divider).frame(height: 1).padding(.vertical, 2)
+
+            HStack(spacing: 6) {
+                Image(systemName: "music.note")
+                    .font(.system(size: 10, weight: .bold)).foregroundStyle(DS.purple)
+                Text(musicPlayer.isLoading ? "Downloading music…" : "Music")
+                    .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(DS.ink2)
+                Spacer(minLength: 0)
+            }
+
+            Text(musicPlayer.currentTrack?.title ?? "Nothing playing")
+                .font(.system(size: 11.5, weight: .medium)).foregroundStyle(DS.ink)
+                .lineLimit(1)
+
+            HStack(spacing: 5) {
+                sidebarMusicButton("backward.fill", enabled: musicPlayer.currentTrack != nil, action: musicPlayer.previous)
+                sidebarMusicButton(musicPlayer.isPlaying ? "pause.fill" : "play.fill", enabled: !musicPlayer.isLoading, primary: true, action: musicPlayer.togglePlayback)
+                sidebarMusicButton("forward.fill", enabled: musicPlayer.currentTrack != nil, action: musicPlayer.next)
+                sidebarMusicButton("stop.fill", enabled: musicPlayer.currentTrack != nil, action: musicPlayer.stop)
+            }
+
+            HStack(spacing: 7) {
+                Image(systemName: musicPlayer.volume < 0.02 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 10)).foregroundStyle(DS.ink2).frame(width: 20)
+                Slider(value: $musicPlayer.volume, in: 0...1).controlSize(.mini)
+            }
         }
         .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glass(DS.rTile)
         .padding(.horizontal, 12).padding(.bottom, 12)
+    }
+
+    private func sidebarMusicButton(_ icon: String, enabled: Bool, primary: Bool = false,
+                                    action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(enabled ? (primary ? Color.white : DS.ink2) : DS.ink3.opacity(0.55))
+                .frame(maxWidth: .infinity).frame(height: 25)
+                .background(primary && enabled ? AnyShapeStyle(DS.blue) : AnyShapeStyle(DS.raised),
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain).disabled(!enabled)
     }
 
     private var keyProgress: some View {
@@ -680,6 +721,13 @@ struct LiveWallUI: View {
         case .keys:       KeysPage(state: state)
         case .movies:     MoviesPage(movies: movies)
         case .games:      GamesPage()
+        case .music:
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.035, green: 0.04, blue: 0.075),
+                                        Color(red: 0.075, green: 0.05, blue: 0.13)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+                ScrollView { MusicHubPage().padding(DS.pad) }
+            }
         case .profile:    ScrollView { ProfileScreen().padding(DS.pad) }
         case .admin:      adminPage
         }
@@ -907,6 +955,119 @@ private struct GameEntry: Identifiable, Hashable {
     let resourceName: String
     let title: String
     var id: String { resourceName }
+
+    var category: String {
+        let value = "\(resourceName) \(title)".lowercased()
+        if value.contains("race") || value.contains("racing") || value.contains("drive") ||
+            value.contains("car") || value.contains("moto") || value.contains("rider") ||
+            value.contains("truck") || value.contains("drift") { return "Racing" }
+        if value.contains("football") || value.contains("soccer") || value.contains("basket") ||
+            value.contains("golf") || value.contains("tennis") || value.contains("sport") ||
+            value.contains("skate") || value.contains("boxing") { return "Sports" }
+        if value.contains("puzzle") || value.contains("2048") || value.contains("chess") ||
+            value.contains("word") || value.contains("sudoku") || value.contains("merge") ||
+            value.contains("connect") { return "Puzzle" }
+        if value.contains("platform") || value.contains("mario") || value.contains("runner") ||
+            value.contains("jump") || value.contains("parkour") || value.contains("vex") { return "Platformer" }
+        if value.contains("shoot") || value.contains("battle") || value.contains("war") ||
+            value.contains("fight") || value.contains("gun") || value.contains("ninja") ||
+            value.contains("zombie") { return "Action" }
+        return "Arcade"
+    }
+}
+
+private struct GameTile: View {
+    let game: GameEntry
+    var badge: String? = nil
+    var favorite = false
+    var compact = false
+    var onPlay: () -> Void
+    var onFavorite: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+                if let cover = GameCoverStore.image(for: game.resourceName) {
+                    Image(nsImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .scaleEffect(hover ? 1.045 : 1)
+                } else {
+                    LinearGradient(colors: tint, startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Image(systemName: "gamecontroller.fill")
+                        .font(.system(size: compact ? 26 : 31, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                LinearGradient(colors: [.clear, .black.opacity(hover ? 0.82 : 0.66)],
+                               startPoint: .center, endPoint: .bottom)
+
+                Text(game.title)
+                    .font(.system(size: compact ? 11.5 : 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .padding(.horizontal, 10).padding(.bottom, 9)
+
+                if let badge {
+                    HStack(spacing: 4) {
+                        Image(systemName: badge == "TOP" ? "star.fill" : "clock.fill")
+                            .font(.system(size: 7.5, weight: .bold))
+                        Text(badge).font(.system(size: 8.5, weight: .bold)).tracking(0.4)
+                    }
+                    .foregroundStyle(badge == "TOP" ? Color(red: 0.16, green: 0.11, blue: 0.02) : .white)
+                    .padding(.horizontal, 7).frame(height: 20)
+                    .background(badge == "TOP" ? Color(red: 0.96, green: 0.72, blue: 0.24) : DS.blue,
+                                in: Capsule())
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+
+                Button(action: onFavorite) {
+                    Image(systemName: favorite ? "star.fill" : "star")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(favorite ? Color.yellow : .white)
+                        .frame(width: 25, height: 25)
+                        .background(.black.opacity(0.48), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(.white.opacity(0.18)))
+                }
+                .buttonStyle(.plain)
+                .opacity(hover || favorite ? 1 : 0)
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+        .aspectRatio(5.0 / 4.0, contentMode: .fit)
+        .clipped()
+        .background(Color(red: 0.07, green: 0.08, blue: 0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(hover ? DS.blue.opacity(0.9) : .white.opacity(0.10), lineWidth: hover ? 2 : 1))
+        .shadow(color: hover ? DS.blue.opacity(0.24) : .black.opacity(0.24), radius: hover ? 13 : 8, y: 5)
+        .animation(.easeOut(duration: 0.18), value: hover)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture(perform: onPlay)
+        .onHover { hover = $0 }
+        .help("Play \(game.title)")
+    }
+
+    private var tint: [Color] {
+        let h = Double(abs(game.title.hashValue % 360)) / 360.0
+        return [Color(hue: h, saturation: 0.58, brightness: 0.62),
+                Color(hue: (h + 0.15).truncatingRemainder(dividingBy: 1), saturation: 0.78, brightness: 0.25)]
+    }
+}
+
+private enum GamesHubTab: String, CaseIterable {
+    case games = "Games"
+    case apps = "Apps"
+
+    var icon: String {
+        switch self {
+        case .games: return "gamecontroller.fill"
+        case .apps: return "square.grid.2x2.fill"
+        }
+    }
 }
 
 private struct GamesPage: View {
@@ -915,6 +1076,14 @@ private struct GamesPage: View {
     @State private var showing = false
     @State private var fullscreen = false
     @State private var search = ""
+    @State private var tabLimitReached = false
+    @State private var category = "All"
+    @State private var hubTab: GamesHubTab = .games
+    @AppStorage("LiveWall.gameFavorites") private var favoriteStorage = ""
+    @AppStorage("LiveWall.recentGames") private var recentStorage = ""
+
+    private let featuredGameIDs = ["gobble", "monster-tracks", "drive-mad"]
+    private let categories = ["All", "Action", "Racing", "Sports", "Puzzle", "Platformer", "Arcade"]
 
     private var games: [GameEntry] {
         guard let root = Bundle.main.resourceURL?.appendingPathComponent("Games", isDirectory: true),
@@ -930,61 +1099,56 @@ private struct GamesPage: View {
         }.sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
     }
     private var visible: [GameEntry] {
-        search.isEmpty ? games : games.filter { $0.title.localizedCaseInsensitiveContains(search) }
+        games.filter {
+            (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search)) &&
+            (category == "All" || $0.category == category)
+        }
+    }
+    private var featuredGames: [GameEntry] {
+        featuredGameIDs.compactMap { id in visible.first { $0.resourceName == id } }
+    }
+    private var regularGames: [GameEntry] {
+        visible.filter { !featuredGameIDs.contains($0.resourceName) }
+    }
+    private var favoriteIDs: Set<String> {
+        Set(favoriteStorage.split(separator: "|").map(String.init))
+    }
+    private var recentGames: [GameEntry] {
+        let lookup = Dictionary(uniqueKeysWithValues: games.map { ($0.id, $0) })
+        return recentStorage.split(separator: "|").compactMap { lookup[String($0)] }.prefix(16).map { $0 }
     }
 
     var body: some View {
         ZStack {
+            LinearGradient(colors: [Color(red: 0.035, green: 0.04, blue: 0.075),
+                                    Color(red: 0.075, green: 0.05, blue: 0.13)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: DS.gap) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Games").font(.system(size: 26, weight: .bold)).foregroundStyle(DS.ink)
-                            Text("\(games.count) games, playing in tabs.")
-                                .font(.system(size: 12.5)).foregroundStyle(DS.ink2)
-                        }
-                        Spacer()
-                        HStack(spacing: 7) {
-                            Image(systemName: "magnifyingglass").font(.system(size: 11.5)).foregroundStyle(DS.ink3)
-                            TextField("Search games", text: $search).textFieldStyle(.plain)
-                                .font(.system(size: 12.5)).frame(width: 150)
-                        }
-                        .padding(.horizontal, 11).frame(height: 30).glass(DS.rCtl, strong: true)
-                        Button("Random") { if let g = visible.randomElement() { openGame(g) } }
-                            .buttonStyle(DSGlassButton())
-                    }
-
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 240), spacing: DS.gap)], spacing: DS.gap) {
-                        ForEach(visible) { g in
-                            Button { openGame(g) } label: {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    // Fixed 16:10 cell; the artwork fills it as a
-                                    // clipped overlay so a wide cover can never
-                                    // stretch the card past its column.
-                                    Color.clear
-                                        .aspectRatio(16.0/10.0, contentMode: .fit)
-                                        .overlay {
-                                            if let cover = GameCoverStore.image(for: g.resourceName) {
-                                                Image(nsImage: cover)
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                            } else {
-                                                ZStack {
-                                                    LinearGradient(colors: tint(g),
-                                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                                                    Image(systemName: "gamecontroller.fill")
-                                                        .font(.system(size: 28)).foregroundStyle(.white.opacity(0.9))
-                                                }
-                                            }
-                                        }
-                                        .clipped()
-                                    Text(g.title).font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(DS.ink).lineLimit(2)
-                                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(spacing: 5) {
+                        ForEach(GamesHubTab.allCases, id: \.self) { tab in
+                            Button { hubTab = tab } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: tab.icon).font(.system(size: 10.5, weight: .semibold))
+                                    Text(tab.rawValue).font(.system(size: 12, weight: .semibold))
                                 }
-                                .glass(DS.rTile)
-                            }.buttonStyle(.plain)
+                                .foregroundStyle(hubTab == tab ? .white : .white.opacity(0.5))
+                                .padding(.horizontal, 16).frame(height: 32)
+                                .background(hubTab == tab ? AnyShapeStyle(DS.accent) : AnyShapeStyle(Color.clear), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
+                    }
+                    .padding(4)
+                    .background(.black.opacity(0.25), in: Capsule())
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.1)))
+                    .frame(maxWidth: .infinity)
+
+                    if hubTab == .games {
+                        gameLibrary
+                    } else {
+                        AppsHubPage()
                     }
                 }
                 .padding(DS.pad)
@@ -993,21 +1157,139 @@ private struct GamesPage: View {
             if showing { browser.transition(.opacity).zIndex(30) }
         }
         .animation(.easeOut(duration: 0.18), value: showing)
+        .animation(.easeOut(duration: 0.16), value: hubTab)
+        .alert("Five games are already open", isPresented: $tabLimitReached) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Close one of the game tabs before opening another game.")
+        }
     }
 
-    private func tint(_ g: GameEntry) -> [Color] {
-        let h = Double(abs(g.title.hashValue % 360)) / 360.0
-        return [Color(hue: h, saturation: 0.55, brightness: 0.62),
-                Color(hue: (h + 0.15).truncatingRemainder(dividingBy: 1), saturation: 0.75, brightness: 0.3)]
+    @ViewBuilder private var gameLibrary: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Games").font(.system(size: 28, weight: .bold)).foregroundStyle(.white)
+                            Text("Pick a game and jump straight in")
+                                .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.48))
+                        }
+                        Spacer()
+                        HStack(spacing: 7) {
+                            Image(systemName: "magnifyingglass").font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.48))
+                            TextField("Search games", text: $search).textFieldStyle(.plain)
+                                .font(.system(size: 12.5)).foregroundStyle(.white).frame(width: 170)
+                        }
+                        .padding(.horizontal, 11).frame(height: 32)
+                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.white.opacity(0.13)))
+                        if !open.isEmpty {
+                            Button("Open Tabs (\(open.count))") { showing = true }
+                                .buttonStyle(GameHeaderButton())
+                        }
+                        Button("Random") { if let g = visible.randomElement() { openGame(g) } }
+                            .buttonStyle(GameHeaderButton())
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(categories, id: \.self) { name in
+                                Button { category = name } label: {
+                                    Text(name).font(.system(size: 11.5, weight: .semibold))
+                                        .foregroundStyle(category == name ? .white : .white.opacity(0.62))
+                                        .padding(.horizontal, 13).frame(height: 29)
+                                        .background(category == name ? AnyShapeStyle(DS.accent) : AnyShapeStyle(Color.white.opacity(0.08)), in: Capsule())
+                                        .overlay(Capsule().strokeBorder(.white.opacity(category == name ? 0.18 : 0.10)))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    if !featuredGames.isEmpty {
+                        shelf(title: "This Month’s Top Games!", games: featuredGames, badge: "TOP")
+                    }
+
+                    if search.isEmpty && category == "All" && !recentGames.isEmpty {
+                        shelf(title: "Recently Played", games: recentGames, badge: "RECENT")
+                    }
+
+                    if !regularGames.isEmpty {
+                        HStack {
+                            Text(search.isEmpty && category == "All" ? "All Games" : "Search Results")
+                                .font(.system(size: 16, weight: .bold)).foregroundStyle(.white.opacity(0.92))
+                            Spacer()
+                            Text("\(regularGames.count)")
+                                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.34))
+                        }
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 148, maximum: 190), spacing: 10)], spacing: 10) {
+                            ForEach(regularGames) { g in
+                                GameTile(game: g, favorite: favoriteIDs.contains(g.id),
+                                         onPlay: { openGame(g) }, onFavorite: { toggleFavorite(g) })
+                            }
+                        }
+                    } else if visible.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "gamecontroller")
+                                .font(.system(size: 34, weight: .medium))
+                            Text("No Games Found").font(.system(size: 16, weight: .semibold))
+                            Text("Try another search or category.").font(.system(size: 12.5))
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                        .foregroundStyle(.white.opacity(0.72))
+                        .frame(maxWidth: .infinity).padding(.top, 70)
+                    }
+        }
+    }
+
+    private func shelf(title: String, games: [GameEntry], badge: String) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(title).font(.system(size: 16, weight: .bold)).foregroundStyle(.white.opacity(0.92))
+                Spacer()
+                Text("\(games.count)").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.white.opacity(0.34))
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 9) {
+                    ForEach(games) { g in
+                        GameTile(game: g, badge: badge, favorite: favoriteIDs.contains(g.id), compact: true,
+                                 onPlay: { openGame(g) }, onFavorite: { toggleFavorite(g) })
+                            .frame(width: 166)
+                    }
+                }.padding(.vertical, 5).padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func toggleFavorite(_ game: GameEntry) {
+        var ids = favoriteIDs
+        if ids.contains(game.id) { ids.remove(game.id) } else { ids.insert(game.id) }
+        favoriteStorage = ids.sorted().joined(separator: "|")
+    }
+
+    private func recordRecent(_ game: GameEntry) {
+        var ids = recentStorage.split(separator: "|").map(String.init).filter { $0 != game.id }
+        ids.insert(game.id, at: 0)
+        recentStorage = ids.prefix(16).joined(separator: "|")
     }
 
     private func openGame(_ g: GameEntry) {
-        if !open.contains(where: { $0.id == g.id }) { open.append(g) }
+        recordRecent(g)
+        if open.contains(where: { $0.id == g.id }) {
+            activeID = g.id
+            showing = true
+            return
+        }
+        guard open.count < 5 else {
+            tabLimitReached = true
+            return
+        }
+        open.append(g)
         activeID = g.id; showing = true
     }
     private func close(_ g: GameEntry) {
         guard let i = open.firstIndex(where: { $0.id == g.id }) else { return }
         open.remove(at: i)
+        tabLimitReached = false
         if open.isEmpty { showing = false; activeID = nil }
         else if activeID == g.id { activeID = open[min(i, open.count - 1)].id }
     }
@@ -1015,10 +1297,10 @@ private struct GamesPage: View {
     private var browser: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button { showing = false; open = []; activeID = nil } label: {
+                Button { showing = false } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
-                        Text("Back").font(.system(size: 12.5, weight: .semibold))
+                        Text("Games").font(.system(size: 12.5, weight: .semibold))
                     }.foregroundStyle(.white)
                     .padding(.horizontal, 13).frame(height: 30)
                     .background(DS.blue, in: Capsule())
@@ -1029,8 +1311,10 @@ private struct GamesPage: View {
                         ForEach(open) { g in
                             let on = g.id == activeID
                             HStack(spacing: 7) {
-                                Text(g.title).font(.system(size: 12, weight: on ? .semibold : .regular))
-                                    .foregroundStyle(.white.opacity(on ? 1 : 0.7)).lineLimit(1)
+                                Button { activeID = g.id } label: {
+                                    Text(g.title).font(.system(size: 12, weight: on ? .semibold : .regular))
+                                        .foregroundStyle(.white.opacity(on ? 1 : 0.7)).lineLimit(1)
+                                }.buttonStyle(.plain)
                                 Button { close(g) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
                                         .foregroundStyle(.white.opacity(0.65)).frame(width: 15, height: 15)
@@ -1041,11 +1325,13 @@ private struct GamesPage: View {
                                         in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             .frame(maxWidth: 200)
                             .contentShape(Rectangle())
-                            .onTapGesture { activeID = g.id }
                         }
                     }
                 }
                 Spacer(minLength: 0)
+                Text("\(open.count)/5")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
                 Button {
                     GameWindow.toggleFullscreen(); fullscreen = GameWindow.isFullscreen
                 } label: {
@@ -1062,7 +1348,7 @@ private struct GamesPage: View {
             ZStack {
                 Color(red: 0.04, green: 0.04, blue: 0.05)
                 ForEach(open) { g in
-                    BundledGameView(resourceName: g.resourceName)
+                    BundledGameView(resourceName: g.resourceName, isActive: g.id == activeID)
                         .opacity(g.id == activeID ? 1 : 0)
                         .allowsHitTesting(g.id == activeID)
                 }
@@ -1071,6 +1357,18 @@ private struct GamesPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(red: 0.04, green: 0.04, blue: 0.05).ignoresSafeArea())
         .onAppear { fullscreen = GameWindow.isFullscreen }
+    }
+}
+
+private struct GameHeaderButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.88))
+            .padding(.horizontal, 12).frame(height: 32)
+            .background(.white.opacity(configuration.isPressed ? 0.14 : 0.09),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.white.opacity(0.13)))
     }
 }
 
@@ -2370,7 +2668,7 @@ private struct KeysPage: View {
 private struct SettingsPage: View {
     @ObservedObject var vm: WallpaperViewModel
     @State private var section = "General"
-    private let sections = ["General", "Appearance", "Performance", "Wallpapers", "Startup", "Updates", "API", "About"]
+    private let sections = ["General", "Appearance", "Performance", "Wallpapers", "Music", "Startup", "Updates", "API", "About"]
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.gap) {
@@ -2404,6 +2702,8 @@ private struct SettingsPage: View {
                     // The API panel draws its own cards, so it isn't boxed again.
                     if section == "API" {
                         APICheckPanel()
+                    } else if section == "Music" {
+                        MusicDownloadSettings()
                     } else {
                         group { body(for: section) }
                     }

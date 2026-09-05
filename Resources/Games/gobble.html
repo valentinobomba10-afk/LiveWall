@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <base href="https://cdn.jsdelivr.net/gh/bubblfan/fancade@main/gobble/" />
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta name="robots" content="noindex,nofollow" />
+    <meta name="google" content="notranslate" />
+    <title>Gobble</title>
+    <link rel="stylesheet" href="webapp/fancade.css" />
+    <link rel="icon" href="webapp/favicon.ico" />
+    <script>
+      // The hosted Poki SDK can wait forever when this page runs from a local
+      // WKWebView. Gobble only needs these lifecycle hooks, so resolve them
+      // locally and let the game start without loading advertising code.
+      (() => {
+        const done = () => Promise.resolve();
+        const noop = () => {};
+        window.PokiSDK = {
+          init: done,
+          initWithVideoHB: done,
+          commercialBreak: done,
+          rewardedBreak: () => Promise.resolve(false),
+          getLeaderboard: done,
+          getSharableURL: () => Promise.reject(),
+          getURLParam: () => "",
+          customEvent: noop,
+          displayAd: noop,
+          destroyAd: noop,
+          disableProgrammatic: noop,
+          gameLoadingStart: noop,
+          gameLoadingFinished: noop,
+          gameLoadingProgress: noop,
+          gameInteractive: noop,
+          gameplayStart: noop,
+          gameplayStop: noop,
+          roundStart: noop,
+          roundEnd: noop,
+          muteAd: noop,
+          setDebug: noop,
+          happyTime: noop,
+          setPlayerAge: noop,
+          togglePlayerAdvertisingConsent: noop,
+          logError: noop,
+          sendHighscore: noop,
+          setDebugTouchOverlayController: noop
+        };
+      })();
+    </script>
+  </head>
+  <body id="body">
+    <div id="modal_parent">
+      <div id="modal_content">
+        <span id="modal_close_button">&times;</span>
+        <div id="store_link_modal_content" class="modal_inner"></div>
+        <div id="share_file_modal_content" class="modal_inner"></div>
+      </div>
+    </div>
+    <div id="canvas_border" class="emscripten_border">
+      <div id="play_content" class="middle center">
+        <div class="edge">
+          <div class="box">
+            <div class="black">
+              <img src="webapp/cover.jpg" class="cover" />
+              <p class="title">Gobble</p>
+              <p class="author">Fancade</p>
+            </div>
+          </div>
+        </div>
+        <div id="progress_or_play">
+          <progress id="progress" class="loading" value="0" max="100"></progress>
+        </div>
+        <p class="description"></p>
+      </div>
+      <canvas class="emscripten" id="canvas" tabindex="-1"></canvas>
+      <div id="gradient"></div>
+      <div id="webview_content"></div>
+    </div>
+    <script src="webapp/source_min.js" crossorigin="anonymous"></script>
+    <script src="webapp/index.js" crossorigin="anonymous"></script>
+  </body>
+</html>

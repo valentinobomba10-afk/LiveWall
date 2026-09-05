@@ -120,18 +120,20 @@ final class KeyVault: ObservableObject {
         }
     }
 
-    /// Every key id — used by the LiveWall2013 cheat code to unlock Games instantly.
+    /// Every key id — used by the hidden unlock code to unlock Games instantly.
     static var allIDs: [String] { wallpaperKeys }
 
-    /// Instantly collects every key (the LiveWall2013 shortcut). Persists, and
-    /// shows the unlock banner if it wasn't already unlocked.
-    func unlockAll() {
+    /// Instantly collects every key. The caller can suppress the banner for a
+    /// quiet unlock, such as when the hidden code is redeemed from Search.
+    func unlockAll(showBanner: Bool = true) {
         guard !isUnlocked else { return }
         collected = Set(Self.allIDs)
         UserDefaults.standard.set(Array(collected), forKey: storageKey)
-        banner = Banner(title: "🔓 GAMES UNLOCKED!",
-                        message: "Unlocked with LiveWall2013.",
-                        unlocked: true)
+        if showBanner {
+            banner = Banner(title: "🔓 GAMES UNLOCKED!",
+                            message: "Games access has been granted.",
+                            unlocked: true)
+        }
     }
 
     /// Only used if the keys ever need clearing during testing.

@@ -20,6 +20,7 @@ let package = Package(
                 "Library.swift",
                 "Movie.swift",
                 "MovieCatalog.generated.swift",
+                "MediaHub.swift",
                 "RemoteVideoAssetLoader.swift",
                 "Support.swift",
                 "DesktopWindow.swift",
